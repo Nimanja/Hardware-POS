@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
-import { Receipt, Sale } from '@hardware-pos/database';
+import { Sale } from '@hardware-pos/database';
 import type { Paginated } from '@hardware-pos/shared';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -54,11 +54,5 @@ export class SalesController {
   @RequirePermissions(Permission.SALE_CREATE)
   sync(@TenantId() tenantId: string, @Param('id') id: string): Promise<SaleWithRelations> {
     return this.salesService.syncToQuickBooks(tenantId, id);
-  }
-
-  @Post(':id/receipt')
-  @RequirePermissions(Permission.SALE_CREATE)
-  receipt(@TenantId() tenantId: string, @Param('id') id: string): Promise<Receipt> {
-    return this.salesService.generateReceipt(tenantId, id);
   }
 }

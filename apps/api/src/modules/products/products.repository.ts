@@ -121,6 +121,7 @@ export class ProductsRepository {
           unitPrice: p.unitPrice,
           quantityOnHand: p.quantityOnHand,
           type: p.type,
+          requiresWarehousePickup: p.requiresWarehousePickup ?? false,
           isActive: true,
           syncStatus: 'SYNCED' as const,
           lastSyncedAt: now,

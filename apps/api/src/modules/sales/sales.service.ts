@@ -3,7 +3,6 @@ import {
   DiscountType,
   PaymentStatus,
   QuickBooksDocumentType,
-  Receipt,
   Sale,
 } from '@hardware-pos/database';
 import type { Paginated } from '@hardware-pos/shared';
@@ -152,45 +151,6 @@ export class SalesService {
       throw new BadRequestException('Only completed sales can be synced to QuickBooks');
     }
     return this.salesRepository.markSynced(sale);
-  }
-
-  /** Generate (or reprint) the receipt for a completed sale. */
-  async generateReceipt(tenantId: string, id: string): Promise<Receipt> {
-    const sale = await this.salesRepository.findByIdForTenant(tenantId, id);
-    if (!sale) {
-      throw new NotFoundException(`Sale ${id} not found`);
-    }
-    if (sale.status !== 'COMPLETED') {
-      throw new BadRequestException('A receipt is only available for a completed sale');
-    }
-
-    const settings = this.settingsService.getSettings(tenantId);
-    const content = {
-      saleNumber: sale.saleNumber,
-      dateTime: (sale.completedAt ?? sale.createdAt).toISOString(),
-      currency: settings.currency,
-      customer: sale.customer ? { id: sale.customer.id, name: sale.customer.name } : null,
-      items: sale.items.map((it) => ({
-        name: it.productName,
-        sku: it.sku,
-        quantity: Number(it.quantity),
-        unitPrice: Number(it.unitPrice),
-        discountAmount: Number(it.discountAmount),
-        lineTotal: Number(it.lineTotal),
-      })),
-      subtotal: Number(sale.subtotal),
-      totalDiscount: Number(sale.totalDiscount),
-      taxAmount: Number(sale.taxAmount),
-      total: Number(sale.total),
-      paidAmount: Number(sale.paidAmount),
-      balanceAmount: Number(sale.balanceAmount),
-      paymentStatus: sale.paymentStatus,
-      documentType: sale.quickbooksDocumentType,
-      payments: sale.payments.map((p) => ({ method: p.method, amount: Number(p.amount) })),
-      footer: settings.receiptFooter,
-    };
-
-    return this.salesRepository.upsertReceipt(sale.id, `RCP-${sale.saleNumber}`, content);
   }
 
   // ── compute pipeline ───────────────────────────────────────────────────────

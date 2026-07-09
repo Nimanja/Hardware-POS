@@ -17,6 +17,8 @@ export interface MockCatalogProduct {
   unitPrice: number;
   quantityOnHand: number;
   type: string;
+  /** Bulky/heavy items are picked from the warehouse, not handed over at the till. */
+  requiresWarehousePickup?: boolean;
   description?: string;
 }
 
@@ -31,6 +33,7 @@ export const MOCK_HARDWARE_PRODUCTS: MockCatalogProduct[] = [
     unitPrice: 8.5,
     quantityOnHand: 120,
     type: 'Inventory',
+    requiresWarehousePickup: true,
   },
   {
     quickbooksItemId: 'QBO-ITEM-1002',
@@ -42,6 +45,7 @@ export const MOCK_HARDWARE_PRODUCTS: MockCatalogProduct[] = [
     unitPrice: 4.75,
     quantityOnHand: 200,
     type: 'Inventory',
+    requiresWarehousePickup: true,
   },
   {
     quickbooksItemId: 'QBO-ITEM-1003',
@@ -86,6 +90,7 @@ export const MOCK_HARDWARE_PRODUCTS: MockCatalogProduct[] = [
     unitPrice: 11.25,
     quantityOnHand: 90,
     type: 'Inventory',
+    requiresWarehousePickup: true,
   },
   {
     quickbooksItemId: 'QBO-ITEM-1007',
@@ -130,6 +135,7 @@ export const MOCK_HARDWARE_PRODUCTS: MockCatalogProduct[] = [
     unitPrice: 22.0,
     quantityOnHand: 80,
     type: 'Inventory',
+    requiresWarehousePickup: true,
   },
 ];
 

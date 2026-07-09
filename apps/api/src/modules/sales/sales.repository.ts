@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Product, Receipt, Sale, SyncStatus } from '@hardware-pos/database';
+import { Prisma, Product, Sale, SyncStatus } from '@hardware-pos/database';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { ComputedLine, PersistSaleInput } from './sales.types';
@@ -222,18 +222,6 @@ export class SalesRepository {
         },
       });
       return tx.sale.findFirstOrThrow({ where: { id: sale.id }, include: saleInclude });
-    });
-  }
-
-  upsertReceipt(
-    saleId: string,
-    receiptNumber: string,
-    content: Prisma.InputJsonValue,
-  ): Promise<Receipt> {
-    return this.prisma.receipt.upsert({
-      where: { saleId },
-      update: { content, printCount: { increment: 1 }, printedAt: new Date() },
-      create: { saleId, receiptNumber, content, printCount: 1, printedAt: new Date() },
     });
   }
 

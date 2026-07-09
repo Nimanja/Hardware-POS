@@ -70,6 +70,17 @@ enum SaleStatus {
   REFUNDED
 }
 
+enum PrintJobType {
+  CUSTOMER_RECEIPT
+  WAREHOUSE_PICKING
+}
+
+enum PrintJobStatus {
+  PENDING
+  PRINTED
+  FAILED
+}
+
 // ─────────────────────────────────────────────────────────────
 // Tenancy & locations
 // ─────────────────────────────────────────────────────────────
@@ -97,6 +108,7 @@ model Tenant {
   quickbooksConnection QuickBooksConnection?
   quickbooksMappings   QuickBooksMapping[]
   auditLogs            AuditLog[]
+  printJobs            PrintJob[]
 }
 
 model Branch {
@@ -220,23 +232,24 @@ model ProductCategory {
 }
 
 model Product {
-  id               String     @id @default(cuid())
-  tenantId         String
-  quickbooksItemId String?
-  name             String
-  sku              String?
-  barcode          String?
-  description      String?
-  categoryId       String?
-  unitType         String?
-  unitPrice        Decimal    @default(0) @db.Decimal(12, 2)
-  quantityOnHand   Decimal    @default(0) @db.Decimal(12, 3)
-  type             String?
-  isActive         Boolean    @default(true)
-  lastSyncedAt     DateTime?
-  syncStatus       SyncStatus @default(NOT_SYNCED)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  id                      String     @id @default(cuid())
+  tenantId                String
+  quickbooksItemId        String?
+  name                    String
+  sku                     String?
+  barcode                 String?
+  description             String?
+  categoryId              String?
+  unitType                String?
+  unitPrice               Decimal    @default(0) @db.Decimal(12, 2)
+  quantityOnHand          Decimal    @default(0) @db.Decimal(12, 3)
+  type                    String?
+  isActive                Boolean    @default(true)
+  requiresWarehousePickup Boolean    @default(false)
+  lastSyncedAt            DateTime?
+  syncStatus              SyncStatus @default(NOT_SYNCED)
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
 
   tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   category  ProductCategory? @relation(fields: [categoryId], references: [id])
@@ -304,14 +317,15 @@ model Sale {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch   Branch     @relation(fields: [branchId], references: [id])
-  register Register?  @relation(fields: [registerId], references: [id])
-  cashier  User       @relation(fields: [cashierId], references: [id])
-  customer Customer?  @relation(fields: [customerId], references: [id])
-  items    SaleItem[]
-  payments Payment[]
-  receipt  Receipt?
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch     @relation(fields: [branchId], references: [id])
+  register  Register?  @relation(fields: [registerId], references: [id])
+  cashier   User       @relation(fields: [cashierId], references: [id])
+  customer  Customer?  @relation(fields: [customerId], references: [id])
+  items     SaleItem[]
+  payments  Payment[]
+  receipt   Receipt?
+  printJobs PrintJob[]
 
   @@unique([tenantId, saleNumber])
   @@index([tenantId])
@@ -403,7 +417,31 @@ model Receipt {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale      Sale       @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  printJobs PrintJob[]
+}
+
+model PrintJob {
+  id              String         @id @default(cuid())
+  tenantId        String
+  saleId          String
+  receiptId       String?
+  type            PrintJobType
+  status          PrintJobStatus @default(PENDING)
+  html            String
+  copies          Int            @default(1)
+  createdByUserId String?
+  printedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  receipt Receipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([saleId])
+  @@index([status])
 }
 
 // ─────────────────────────────────────────────────────────────

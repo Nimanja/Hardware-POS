@@ -171,10 +171,37 @@ POST /v1/sales/{id}/sync               # push the sale to QuickBooks (mock for n
 200 → sale marked SYNCED with a mock quickbooksDocumentId; payments get mock ids;
       the sync job closes and a SyncLog entry is written
 400 → sale is not COMPLETED
-
-POST /v1/sales/{id}/receipt            # generate / reprint the receipt (increments printCount)
-200 → { "data": { "receiptNumber", "printCount", "printedAt", "content": { ... } } }
 ```
+
+## Receipts & print jobs
+
+Printing is browser-based for v1: each endpoint returns a self-contained printable HTML
+document (with a Print button) inside a `PrintJob`. A hardware sale prints the **customer
+receipt** by default; if any line's product has `requiresWarehousePickup = true`, a
+**warehouse picking copy** (listing only the pickup items) is created alongside it.
+
+```
+POST /v1/receipts/{saleId}/customer    # customer receipt (+ auto warehouse copy if needed)
+201 → { "data": { "receiptNumber", "warehousePickupRequired": bool,
+                   "printJob": { "id", "type": "CUSTOMER_RECEIPT", "status", "html" },
+                   "warehousePrintJob": { ... } | null } }
+400 → sale not completed   |   404 → sale not found
+
+POST /v1/receipts/{saleId}/warehouse   # (re)generate the warehouse picking copy
+201 → { "data": { "id", "type": "WAREHOUSE_PICKING", "status": "PENDING", "html" } }
+400 → no items on the sale require warehouse pickup
+
+GET  /v1/receipts/sale/{saleId}        # stored customer-receipt record
+GET  /v1/receipts/{id}
+
+GET  /v1/print-jobs?saleId=&type=CUSTOMER_RECEIPT|WAREHOUSE_PICKING&status=PENDING|PRINTED|FAILED
+200 → paginated print jobs (each includes its printable html)
+
+POST /v1/print-jobs/{id}/mark-printed  # mark a job PRINTED after the browser prints it
+200 → { "data": { "id", "status": "PRINTED", "printedAt" } }
+```
+
+Generating receipts / marking printed requires `sale:create`; listing/reading requires `sale:read`.
 
 ## Sync
 
