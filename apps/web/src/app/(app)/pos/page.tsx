@@ -7,6 +7,7 @@ import {
   NotebookPen,
   Plus,
   Search,
+  ShieldCheck,
   Tag,
   Trash2,
   Warehouse,
@@ -14,6 +15,7 @@ import {
 
 import { ItemDiscountDialog } from '@/components/pos/item-discount-dialog';
 import { ItemNoteDialog } from '@/components/pos/item-note-dialog';
+import { ManagerApprovalDialog } from '@/components/pos/manager-approval-dialog';
 import { PaymentDialog } from '@/components/pos/payment-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,7 +32,15 @@ import {
   type LineDiscount,
 } from '@/lib/cart';
 import type { ClientProduct } from '@/lib/catalog';
+import { requestDiscountApproval } from '@/lib/discounts';
+import { discountLimitFor, withinDiscountLimit } from '@/lib/permissions';
 import { cn, formatMoney } from '@/lib/utils';
+
+interface PendingApproval {
+  productId: string;
+  discount: LineDiscount;
+  percent: number;
+}
 
 export default function PosPage() {
   const { session } = useAuth();
@@ -42,6 +52,7 @@ export default function PosPage() {
   const [customerId, setCustomerId] = React.useState('');
   const [noteFor, setNoteFor] = React.useState<string | null>(null);
   const [discountFor, setDiscountFor] = React.useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = React.useState<PendingApproval | null>(null);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
 
@@ -90,14 +101,69 @@ export default function PosPage() {
     setNoteFor(null);
   };
 
-  const setDiscount = (productId: string, discount: LineDiscount) => {
-    updateItem(productId, (it) => ({ ...it, discount }));
+  const applyDirectDiscount = (productId: string, discount: LineDiscount) =>
+    updateItem(productId, (it) => ({
+      ...it,
+      discount,
+      approvalToken: undefined,
+      approvedByUserId: undefined,
+    }));
+
+  const applyApprovedDiscount = (
+    productId: string,
+    discount: LineDiscount,
+    token: string,
+    approvedByUserId?: string,
+  ) => updateItem(productId, (it) => ({ ...it, discount, approvalToken: token, approvedByUserId }));
+
+  const clearDiscount = (productId: string) => {
+    updateItem(productId, (it) => ({
+      ...it,
+      discount: undefined,
+      approvalToken: undefined,
+      approvedByUserId: undefined,
+    }));
     setDiscountFor(null);
   };
 
-  const clearDiscount = (productId: string) => {
-    updateItem(productId, (it) => ({ ...it, discount: undefined }));
-    setDiscountFor(null);
+  /** Apply within the acting user's limit, or route to manager approval. */
+  const handleDiscountApply = (productId: string, discount: LineDiscount) => {
+    const item = cart.find((it) => it.product.id === productId);
+    if (!item) return;
+    const line = computeLine({ ...item, discount });
+    const percent = line.lineSubtotal > 0 ? (line.discountAmount / line.lineSubtotal) * 100 : 0;
+
+    if (withinDiscountLimit(discountLimitFor(session!.user.role), percent)) {
+      applyDirectDiscount(productId, discount);
+      setDiscountFor(null);
+    } else {
+      setPendingApproval({ productId, discount, percent });
+      setDiscountFor(null);
+    }
+  };
+
+  const handleApprove = async (managerPin: string, note: string): Promise<string | null> => {
+    if (!pendingApproval) return 'No pending discount';
+    const { productId, discount } = pendingApproval;
+    const res = await requestDiscountApproval(session!, {
+      managerPin,
+      productId,
+      discountType: discount.type,
+      discountValue: discount.value,
+      reason: note || discount.reason,
+    });
+    if (res.approved && res.approvalToken) {
+      applyApprovedDiscount(
+        productId,
+        { ...discount, reason: note || discount.reason },
+        res.approvalToken,
+        res.approvedByUserId ?? undefined,
+      );
+      setPendingApproval(null);
+      showToast('Discount approved by manager');
+      return null;
+    }
+    return res.reason ?? 'Not approved';
   };
 
   const totals = computeTotals(cart, data.settings.taxRatePercent);
@@ -105,6 +171,7 @@ export default function PosPage() {
 
   const noteItem = cart.find((it) => it.product.id === noteFor);
   const discountItem = cart.find((it) => it.product.id === discountFor);
+  const approvalItem = cart.find((it) => it.product.id === pendingApproval?.productId);
   const customerName =
     data.customers.find((c) => c.id === customerId)?.name ?? 'Walk-in customer';
 
@@ -232,7 +299,10 @@ export default function PosPage() {
                     <div className="text-right text-sm font-semibold">
                       {formatMoney(line.lineTotal, currency)}
                       {line.discountAmount > 0 ? (
-                        <div className="text-xs font-normal text-success">
+                        <div className="flex items-center justify-end gap-1 text-xs font-normal text-success">
+                          {item.approvalToken ? (
+                            <ShieldCheck className="h-3 w-3" aria-label="Manager approved" />
+                          ) : null}
                           -{formatMoney(line.discountAmount, currency)}
                         </div>
                       ) : null}
@@ -329,12 +399,24 @@ export default function PosPage() {
         <ItemDiscountDialog
           open={!!discountFor}
           productName={discountItem.product.name}
-          lineSubtotal={computeLine(discountItem).lineSubtotal}
+          unitPrice={discountItem.product.unitPrice}
+          quantity={discountItem.quantity}
           currency={currency}
+          roleLimit={discountLimitFor(session!.user.role)}
           initial={discountItem.discount}
-          onApply={(d) => setDiscount(discountItem.product.id, d)}
+          onApply={(d) => handleDiscountApply(discountItem.product.id, d)}
           onClear={() => clearDiscount(discountItem.product.id)}
           onClose={() => setDiscountFor(null)}
+        />
+      ) : null}
+
+      {approvalItem && pendingApproval ? (
+        <ManagerApprovalDialog
+          open={!!pendingApproval}
+          productName={approvalItem.product.name}
+          discountLabel={formatDiscountLabel(pendingApproval.discount, currency)}
+          onApprove={handleApprove}
+          onClose={() => setPendingApproval(null)}
         />
       ) : null}
 
@@ -363,4 +445,10 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-foreground">{value}</span>
     </div>
   );
+}
+
+function formatDiscountLabel(discount: LineDiscount, currency: string): string {
+  return discount.type === 'PERCENTAGE'
+    ? `${discount.value}% off`
+    : `${formatMoney(discount.value, currency)} off`;
 }

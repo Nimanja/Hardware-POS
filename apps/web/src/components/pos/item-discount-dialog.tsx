@@ -1,19 +1,24 @@
 'use client';
 
+import { ShieldAlert } from 'lucide-react';
 import * as React from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { computeDiscount, type DiscountType, type LineDiscount } from '@/lib/cart';
-import { cn, formatMoney } from '@/lib/utils';
+import { withinDiscountLimit } from '@/lib/permissions';
+import { cn, formatMoney, round2 } from '@/lib/utils';
 
 export function ItemDiscountDialog({
   open,
   productName,
-  lineSubtotal,
+  unitPrice,
+  quantity,
   currency,
+  roleLimit,
   initial,
   onApply,
   onClear,
@@ -21,8 +26,11 @@ export function ItemDiscountDialog({
 }: {
   open: boolean;
   productName: string;
-  lineSubtotal: number;
+  unitPrice: number;
+  quantity: number;
   currency: string;
+  /** Acting user's discount limit (% of line); null = unlimited. */
+  roleLimit: number | null;
   initial?: LineDiscount;
   onApply: (discount: LineDiscount) => void;
   onClear: () => void;
@@ -41,7 +49,11 @@ export function ItemDiscountDialog({
   }, [open, initial]);
 
   const numeric = Number(value) || 0;
-  const preview = computeDiscount(lineSubtotal, { type, value: numeric });
+  const lineSubtotal = round2(unitPrice * quantity);
+  const discountAmount = computeDiscount(lineSubtotal, { type, value: numeric });
+  const lineTotal = round2(lineSubtotal - discountAmount);
+  const effectivePercent = lineSubtotal > 0 ? (discountAmount / lineSubtotal) * 100 : 0;
+  const needsApproval = numeric > 0 && !withinDiscountLimit(roleLimit, effectivePercent);
 
   return (
     <Dialog
@@ -63,12 +75,23 @@ export function ItemDiscountDialog({
             disabled={numeric <= 0}
             onClick={() => onApply({ type, value: numeric, reason: reason.trim() || undefined })}
           >
-            Apply discount
+            {needsApproval ? 'Request approval' : 'Apply discount'}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted px-4 py-3 text-sm">
+          <div>
+            <div className="text-xs text-muted-foreground">Unit price</div>
+            <div className="font-medium">{formatMoney(unitPrice, currency)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Quantity</div>
+            <div className="font-medium">{quantity}</div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           {(['PERCENTAGE', 'FIXED'] as DiscountType[]).map((t) => (
             <button
@@ -101,7 +124,7 @@ export function ItemDiscountDialog({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="discount-reason">Reason (optional)</Label>
+          <Label htmlFor="discount-reason">Reason / note (optional)</Label>
           <Input
             id="discount-reason"
             value={reason}
@@ -110,10 +133,25 @@ export function ItemDiscountDialog({
           />
         </div>
 
-        <div className="flex items-center justify-between rounded-xl bg-muted px-4 py-3 text-sm">
-          <span className="text-muted-foreground">Discount preview</span>
-          <span className="font-semibold">-{formatMoney(preview, currency)}</span>
+        <div className="space-y-1.5 rounded-xl border border-border p-4 text-sm">
+          <div className="flex justify-between text-muted-foreground">
+            <span>Discount</span>
+            <span>-{formatMoney(discountAmount, currency)}</span>
+          </div>
+          <div className="flex justify-between border-t border-border pt-1.5 text-base font-semibold">
+            <span>Line total</span>
+            <span>{formatMoney(lineTotal, currency)}</span>
+          </div>
         </div>
+
+        {needsApproval ? (
+          <Badge variant="warning" className="w-full justify-center py-1.5">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            {roleLimit === 0
+              ? 'Any discount needs manager approval'
+              : `Exceeds your ${roleLimit}% limit — manager approval required`}
+          </Badge>
+        ) : null}
       </div>
     </Dialog>
   );

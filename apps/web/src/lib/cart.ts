@@ -14,6 +14,10 @@ export interface CartItem {
   quantity: number;
   note?: string;
   discount?: LineDiscount;
+  /** Manager approval token for an over-limit discount (from /discounts/approve). */
+  approvalToken?: string;
+  /** The manager who approved the discount. */
+  approvedByUserId?: string;
 }
 
 export interface LineTotals {
