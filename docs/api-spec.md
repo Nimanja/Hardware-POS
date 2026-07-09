@@ -44,12 +44,43 @@ body:  { "pin": "1111" }
 
 GET  /v1/auth/me                      # current user + effective permissions
 200 →  { "data": { "id", "tenantId", "name", "email", "role", "branchId", "permissions": [] } }
-
-POST /v1/auth/approve-discount        # inline manager approval (cashier submits a manager PIN)
-body:  { "managerPin": "2222", "discountType": "PERCENTAGE", "discountValue": 25 }
-200 →  { "data": { "approvedByUserId": "...", "approvedByName": "Manager" } }
-401 →  PIN does not authorize discount approval
 ```
+
+## Discounts (manual, product-wise)
+
+Each sale line may carry a manual discount (`PERCENTAGE` or `FIXED`), a `discountReason`, and —
+when it exceeds the operator's limit — an approver. Per-role limits (percentage of the line):
+
+| Role              | Max discount without approval |
+| ----------------- | ----------------------------- |
+| Cashier / Accountant | 0%                         |
+| Manager           | 15%                           |
+| Owner / Admin     | unlimited                     |
+
+If a line's discount exceeds the acting user's limit, sale create returns **403** with a
+machine-readable body so the front-end can pop a manager-PIN modal:
+
+```
+403 → { "statusCode": 403, "error": "DiscountApprovalRequired", "requiresApproval": true,
+        "productId": "...", "requiredPercent": 20, "message": "..." }
+```
+
+The cashier then gets an approval token and retries with it on that line:
+
+```
+POST /v1/discounts/approve            # cashier submits a manager's PIN
+body:  { "managerPin": "2222", "productId": "...", "discountType": "PERCENTAGE",
+         "discountValue": 15, "reason": "loyal customer" }
+200 →  { "data": { "approved": true,  "approvedByUserId": "...", "approvalToken": "<jwt, 15m>" } }
+200 →  { "data": { "approved": false, "approvedByUserId": "...|null", "approvalToken": null,
+                   "reason": "Discount exceeds this approver’s limit" } }
+401 →  invalid manager PIN
+```
+
+The token binds tenant + product + discount type/value; attach it as `approvalToken` on the
+sale item. The approver's own limit is re-checked against the real line at completion (so a
+manager token cannot cover a discount beyond 15%). Completing a draft reuses the approver
+already recorded on the draft line — no re-approval needed.
 
 ### Roles & permissions
 
@@ -114,7 +145,7 @@ POST /v1/sales/draft                   # build a DRAFT sale (totals computed, no
 body: { "branchId", "registerId?", "customerId?",
         "items": [ { "productId", "quantity", "unitPrice?",
                      "discountType?": "PERCENTAGE|FIXED", "discountValue?",
-                     "discountReason?", "approvedByUserId?" } ] }
+                     "discountReason?", "approvalToken?" } ] }
 200 → { "data": <sale with items, status DRAFT, syncStatus NOT_SYNCED> }
 
 POST /v1/sales/complete                # complete a draft (saleId) OR a full cart in one shot

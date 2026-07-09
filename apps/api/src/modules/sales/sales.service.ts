@@ -10,6 +10,8 @@ import type { Paginated } from '@hardware-pos/shared';
 
 import { paginate } from '../../common/pagination';
 import { round2, sum2 } from '../../common/money';
+import { AuthenticatedUser } from '../auth/auth.types';
+import { DiscountsService } from '../discounts/discounts.service';
 import { SettingsService } from '../settings/settings.service';
 import { CreateDraftDto } from './dto/create-draft.dto';
 import { CompleteSaleDto } from './dto/complete-sale.dto';
@@ -23,6 +25,7 @@ export class SalesService {
   constructor(
     private readonly salesRepository: SalesRepository,
     private readonly settingsService: SettingsService,
+    private readonly discountsService: DiscountsService,
   ) {}
 
   async list(tenantId: string, query: QuerySalesDto): Promise<Paginated<Sale>> {
@@ -46,14 +49,14 @@ export class SalesService {
   /** Create a DRAFT sale from a cart (totals computed, nothing charged). */
   async createDraft(
     tenantId: string,
-    cashierId: string,
+    actor: AuthenticatedUser,
     dto: CreateDraftDto,
   ): Promise<SaleWithRelations> {
     await this.assertLocations(tenantId, dto.branchId, dto.registerId, dto.customerId);
-    const computed = await this.computeCart(tenantId, dto.items.map(toCartItem));
+    const computed = await this.computeCart(tenantId, actor, dto.items.map(toCartItem));
     return this.salesRepository.createDraft({
       tenantId,
-      cashierId,
+      cashierId: actor.id,
       branchId: dto.branchId,
       registerId: dto.registerId,
       customerId: dto.customerId,
@@ -69,7 +72,7 @@ export class SalesService {
    */
   async complete(
     tenantId: string,
-    cashierId: string,
+    actor: AuthenticatedUser,
     dto: CompleteSaleDto,
   ): Promise<SaleWithRelations> {
     let items: CartItemInput[];
@@ -103,7 +106,7 @@ export class SalesService {
 
     await this.assertLocations(tenantId, branchId, registerId, customerId);
 
-    const computed = await this.computeCart(tenantId, items);
+    const computed = await this.computeCart(tenantId, actor, items);
     const paidAmount = sum2(dto.payments.map((p) => p.amount));
     const { total } = computed;
     const paymentStatus: PaymentStatus =
@@ -118,7 +121,7 @@ export class SalesService {
 
     const persist: PersistSaleInput = {
       tenantId,
-      cashierId,
+      cashierId: actor.id,
       branchId,
       registerId,
       customerId,
@@ -192,7 +195,11 @@ export class SalesService {
 
   // ── compute pipeline ───────────────────────────────────────────────────────
 
-  private async computeCart(tenantId: string, items: CartItemInput[]): Promise<ComputedSale> {
+  private async computeCart(
+    tenantId: string,
+    actor: AuthenticatedUser,
+    items: CartItemInput[],
+  ): Promise<ComputedSale> {
     if (items.length === 0) {
       throw new BadRequestException('Cart is empty');
     }
@@ -201,57 +208,69 @@ export class SalesService {
     const products = await this.salesRepository.findProductsByIds(tenantId, ids);
     const byId = new Map(products.map((p) => [p.id, p]));
     const settings = this.settingsService.getSettings(tenantId);
-    const threshold = settings.highDiscountThresholdPercent;
 
-    const lines = items.map((item) => {
-      const product = byId.get(item.productId);
-      if (!product) {
-        throw new BadRequestException(`Unknown product ${item.productId}`);
-      }
-      if (!product.isActive) {
-        throw new BadRequestException(`Product ${product.name} is inactive`);
-      }
+    const lines = await Promise.all(
+      items.map(async (item) => {
+        const product = byId.get(item.productId);
+        if (!product) {
+          throw new BadRequestException(`Unknown product ${item.productId}`);
+        }
+        if (!product.isActive) {
+          throw new BadRequestException(`Product ${product.name} is inactive`);
+        }
 
-      const cachedPrice = Number(product.unitPrice);
-      if (item.unitPrice != null && round2(item.unitPrice) !== round2(cachedPrice)) {
-        throw new BadRequestException(
-          `Price for ${product.name} has changed; refresh the product cache`,
-        );
-      }
+        const cachedPrice = Number(product.unitPrice);
+        if (item.unitPrice != null && round2(item.unitPrice) !== round2(cachedPrice)) {
+          throw new BadRequestException(
+            `Price for ${product.name} has changed; refresh the product cache`,
+          );
+        }
 
-      const quantity = item.quantity;
-      const onHand = Number(product.quantityOnHand);
-      if (quantity > onHand) {
-        throw new BadRequestException(
-          `Insufficient stock for ${product.name} (on hand ${onHand}, requested ${quantity})`,
-        );
-      }
+        const quantity = item.quantity;
+        const onHand = Number(product.quantityOnHand);
+        if (quantity > onHand) {
+          throw new BadRequestException(
+            `Insufficient stock for ${product.name} (on hand ${onHand}, requested ${quantity})`,
+          );
+        }
 
-      const lineSubtotal = round2(cachedPrice * quantity);
-      const discountAmount = computeDiscount(lineSubtotal, item.discountType, item.discountValue);
-      const discountPercent = lineSubtotal > 0 ? (discountAmount / lineSubtotal) * 100 : 0;
-      if (discountPercent - threshold > 1e-9 && !item.approvedByUserId) {
-        throw new BadRequestException(
-          `Discount on ${product.name} exceeds ${threshold}% and needs manager approval`,
-        );
-      }
+        const lineSubtotal = round2(cachedPrice * quantity);
+        const discountAmount = computeDiscount(lineSubtotal, item.discountType, item.discountValue);
+        const effectivePercent = lineSubtotal > 0 ? (discountAmount / lineSubtotal) * 100 : 0;
 
-      return {
-        productId: product.id,
-        productName: product.name,
-        sku: product.sku,
-        unitPrice: cachedPrice,
-        quantity,
-        discountType: item.discountType ?? null,
-        discountValue: item.discountValue ?? null,
-        discountAmount,
-        discountReason: item.discountReason ?? null,
-        approvedByUserId: item.approvedByUserId ?? null,
-        taxAmount: 0,
-        lineSubtotal,
-        lineTotal: round2(lineSubtotal - discountAmount),
-      };
-    });
+        // Enforce the role-based discount limit; over-limit lines need a covering
+        // approval token (one-shot) or a previously-recorded approver (draft).
+        const approvedByUserId =
+          discountAmount > 0 && item.discountType && item.discountValue
+            ? await this.discountsService.resolveApproval({
+                tenantId,
+                actorRole: actor.role,
+                productId: product.id,
+                discountType: item.discountType,
+                discountValue: item.discountValue,
+                effectivePercent,
+                approvalToken: item.approvalToken,
+                existingApproverId: item.approvedByUserId,
+              })
+            : null;
+
+        return {
+          productId: product.id,
+          productName: product.name,
+          sku: product.sku,
+          unitPrice: cachedPrice,
+          quantity,
+          discountType: item.discountType ?? null,
+          discountValue: item.discountValue ?? null,
+          discountAmount,
+          discountReason: item.discountReason ?? null,
+          approvedByUserId,
+          taxAmount: 0,
+          lineSubtotal,
+          lineTotal: round2(lineSubtotal - discountAmount),
+        };
+      }),
+    );
 
     const subtotal = sum2(lines.map((l) => l.lineSubtotal));
     const totalDiscount = sum2(lines.map((l) => l.discountAmount));
@@ -288,7 +307,7 @@ function toCartItem(dto: SaleItemInputDto): CartItemInput {
     discountType: dto.discountType,
     discountValue: dto.discountValue,
     discountReason: dto.discountReason,
-    approvedByUserId: dto.approvedByUserId,
+    approvalToken: dto.approvalToken,
   };
 }
 

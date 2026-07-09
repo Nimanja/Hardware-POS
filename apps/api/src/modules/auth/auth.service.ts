@@ -9,10 +9,9 @@ import * as bcrypt from 'bcryptjs';
 
 import { AuthRepository } from './auth.repository';
 import { AuthTokenResult, JwtPayload } from './auth.types';
-import { Permission, ROLE_PERMISSIONS, roleHasPermission } from './permissions';
+import { Permission, ROLE_PERMISSIONS } from './permissions';
 import { LoginDto } from './dto/login.dto';
 import { PinLoginDto } from './dto/pin-login.dto';
-import { ApproveDiscountDto } from './dto/approve-discount.dto';
 
 export interface CurrentUserView {
   id: string;
@@ -22,11 +21,6 @@ export interface CurrentUserView {
   role: UserRole;
   branchId: string | null;
   permissions: Permission[];
-}
-
-export interface DiscountApproval {
-  approvedByUserId: string;
-  approvedByName: string;
 }
 
 @Injectable()
@@ -69,16 +63,14 @@ export class AuthService {
     return this.toCurrentUserView(user);
   }
 
-  /**
-   * Inline manager approval for a high discount. The (already logged-in) cashier
-   * submits a manager's PIN; we confirm it belongs to a user allowed to approve.
-   */
-  async approveDiscount(tenantId: string, dto: ApproveDiscountDto): Promise<DiscountApproval> {
-    const approver = await this.findByPin(tenantId, dto.managerPin);
-    if (!approver || !roleHasPermission(approver.role, Permission.DISCOUNT_APPROVE)) {
-      throw new UnauthorizedException('PIN does not authorize discount approval');
-    }
-    return { approvedByUserId: approver.id, approvedByName: approver.name };
+  /** Find an active tenant user by PIN (used by discount approval). */
+  findUserByPin(tenantId: string, pin: string): Promise<User | null> {
+    return this.findByPin(tenantId, pin);
+  }
+
+  /** Load a user by id (used to check a recorded approver's discount limit). */
+  findUserById(id: string): Promise<User | null> {
+    return this.authRepository.findById(id);
   }
 
   // ── helpers ────────────────────────────────────────────────────────────

@@ -4,10 +4,9 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AuthenticatedUser, AuthTokenResult } from './auth.types';
-import { AuthService, CurrentUserView, DiscountApproval } from './auth.service';
+import { AuthService, CurrentUserView } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { PinLoginDto } from './dto/pin-login.dto';
-import { ApproveDiscountDto } from './dto/approve-discount.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -33,15 +32,5 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthenticatedUser): Promise<CurrentUserView> {
     return this.authService.getCurrentUser(user.id);
-  }
-
-  /** Inline manager approval for a high discount (cashier submits a manager PIN). */
-  @Post('approve-discount')
-  @HttpCode(HttpStatus.OK)
-  approveDiscount(
-    @TenantId() tenantId: string,
-    @Body() dto: ApproveDiscountDto,
-  ): Promise<DiscountApproval> {
-    return this.authService.approveDiscount(tenantId, dto);
   }
 }

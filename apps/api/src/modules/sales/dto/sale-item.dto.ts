@@ -28,8 +28,8 @@ export class SaleItemInputDto {
   @IsOptional()
   discountReason?: string;
 
-  /** Manager who approved a high discount (from POST /auth/approve-discount). */
+  /** Approval token from POST /discounts/approve, required for over-limit discounts. */
   @IsString()
   @IsOptional()
-  approvedByUserId?: string;
+  approvalToken?: string;
 }

@@ -16,6 +16,7 @@ import { ProductsModule } from './modules/products/products.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { SalesModule } from './modules/sales/sales.module';
+import { DiscountsModule } from './modules/discounts/discounts.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReceiptsModule } from './modules/receipts/receipts.module';
 import { QuickBooksModule } from './modules/quickbooks/quickbooks.module';
@@ -34,6 +35,7 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
     CategoriesModule,
     CustomersModule,
     SalesModule,
+    DiscountsModule,
     PaymentsModule,
     ReceiptsModule,
     QuickBooksModule,

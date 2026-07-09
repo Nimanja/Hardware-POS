@@ -14,6 +14,7 @@ interface ErrorBody {
   error: string;
   path: string;
   timestamp: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -33,6 +34,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'Internal server error';
     let error = 'InternalServerError';
+    let extra: Record<string, unknown> = {};
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -41,9 +43,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message = res;
         error = exception.name;
       } else if (typeof res === 'object' && res !== null) {
-        const body = res as Record<string, unknown>;
-        message = (body.message as string | string[]) ?? exception.message;
-        error = (body.error as string) ?? exception.name;
+        const { message: m, error: e, statusCode: _s, ...rest } = res as Record<string, unknown>;
+        message = (m as string | string[]) ?? exception.message;
+        error = (e as string) ?? exception.name;
+        extra = rest; // pass through structured fields (e.g. a discount-approval hint)
       }
     } else if (exception instanceof Error) {
       message = exception.message;
@@ -61,6 +64,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       message,
       error,
+      ...extra,
       path: request.url,
       timestamp: new Date().toISOString(),
     };

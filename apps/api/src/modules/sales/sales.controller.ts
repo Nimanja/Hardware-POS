@@ -24,7 +24,7 @@ export class SalesController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateDraftDto,
   ): Promise<SaleWithRelations> {
-    return this.salesService.createDraft(tenantId, user.id, dto);
+    return this.salesService.createDraft(tenantId, user, dto);
   }
 
   @Post('complete')
@@ -35,7 +35,7 @@ export class SalesController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CompleteSaleDto,
   ): Promise<SaleWithRelations> {
-    return this.salesService.complete(tenantId, user.id, dto);
+    return this.salesService.complete(tenantId, user, dto);
   }
 
   @Get()

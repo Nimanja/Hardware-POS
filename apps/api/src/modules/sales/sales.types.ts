@@ -8,6 +8,9 @@ export interface CartItemInput {
   discountType?: DiscountType | null;
   discountValue?: number | null;
   discountReason?: string | null;
+  /** Fresh approval token (one-shot completion). */
+  approvalToken?: string | null;
+  /** Approver already recorded on a draft line (completing a draft). */
   approvedByUserId?: string | null;
 }
 

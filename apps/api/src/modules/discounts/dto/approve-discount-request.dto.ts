@@ -1,22 +1,21 @@
 import { DiscountType } from '@hardware-pos/database';
-import { IsEnum, IsNumber, IsOptional, IsString, Length, Matches, Min } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Length, Matches, IsPositive } from 'class-validator';
 
-export class ApproveDiscountDto {
+export class ApproveDiscountRequestDto {
   @IsString()
   @Length(4, 8)
   @Matches(/^\d+$/, { message: 'managerPin must be numeric' })
   managerPin!: string;
 
+  @IsString()
+  productId!: string;
+
   @IsEnum(DiscountType)
   discountType!: DiscountType;
 
   @IsNumber()
-  @Min(0)
+  @IsPositive()
   discountValue!: number;
-
-  @IsString()
-  @IsOptional()
-  saleItemId?: string;
 
   @IsString()
   @IsOptional()
