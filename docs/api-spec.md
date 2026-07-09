@@ -256,6 +256,30 @@ POST /v1/quickbooks/sync-products      # quickbooks:manage — requires an activ
 404 → QuickBooks is not connected
 ```
 
+## QuickBooks sales sync
+
+Pushes a completed sale to QuickBooks. A **fully paid** sale becomes a **Sales Receipt**; a
+**credit / partial** sale becomes an **Invoice**, and when any amount was paid a **Payment** is
+created and linked to that invoice. Sale line items reference their `quickbooksItemId` when the
+product has been synced. Product-wise discounts are baked into each line's net amount (QuickBooks
+has no per-line discount field) and noted in the line description — see the `TODO(accountant)`
+comments where an itemised discount line or document-level discount would need confirmation.
+
+The QuickBooks document id is stored on the sale, the QuickBooks payment id on the sale's
+payments, and every attempt records a `SyncLog`. If the push fails, the sale is **kept in the POS**
+and marked `FAILED` (with `syncError`) — never rolled back.
+
+```
+POST /v1/quickbooks/sync-sale/{saleId} # quickbooks:manage — sale must be COMPLETED
+200 → { "data": { "saleId", "saleNumber", "status": "SYNCED"|"FAILED",
+                  "quickbooksDocumentType": "SALES_RECEIPT"|"INVOICE",
+                  "quickbooksDocumentId", "quickbooksPaymentId", "message" } }
+404 → QuickBooks not connected / sale not found
+
+POST /v1/quickbooks/retry/{syncLogId}  # quickbooks:manage — re-run the sale sync for a failed log
+200 → same shape as sync-sale (attempt count incremented)
+```
+
 ## Error codes
 
 | Status | Meaning                                             |

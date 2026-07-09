@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, Post, Query, Res } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res } from '@nestjs/common';
 import { UserRole } from '@hardware-pos/database';
 import type { Response } from 'express';
 
@@ -10,12 +10,17 @@ import { Permission } from '../auth/permissions';
 import { QuickBooksCallbackQuery, QuickBooksConnectionStatus } from './quickbooks.interfaces';
 import { QuickBooksService } from './quickbooks.service';
 import { QuickBooksSyncService, type SyncProductsSummary } from './quickbooks-sync.service';
+import {
+  QuickBooksSalesSyncService,
+  type SaleSyncResult,
+} from './quickbooks-sales-sync.service';
 
 @Controller('quickbooks')
 export class QuickBooksController {
   constructor(
     private readonly quickBooksService: QuickBooksService,
     private readonly quickBooksSyncService: QuickBooksSyncService,
+    private readonly quickBooksSalesSyncService: QuickBooksSalesSyncService,
   ) {}
 
   /** Redirect the admin to the QuickBooks authorization screen. Owner/admin only. */
@@ -58,5 +63,30 @@ export class QuickBooksController {
   @RequirePermissions(Permission.QUICKBOOKS_MANAGE)
   syncProducts(@TenantId() tenantId: string): Promise<SyncProductsSummary> {
     return this.quickBooksSyncService.syncProducts(tenantId);
+  }
+
+  /**
+   * Push a completed sale to QuickBooks (Sales Receipt when fully paid, Invoice +
+   * linked Payment otherwise). A failed push keeps the sale and marks it FAILED.
+   */
+  @Post('sync-sale/:saleId')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.QUICKBOOKS_MANAGE)
+  syncSale(
+    @TenantId() tenantId: string,
+    @Param('saleId') saleId: string,
+  ): Promise<SaleSyncResult> {
+    return this.quickBooksSalesSyncService.syncSale(tenantId, saleId);
+  }
+
+  /** Retry a failed sale sync identified by its sync-log id. */
+  @Post('retry/:syncLogId')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.QUICKBOOKS_MANAGE)
+  retry(
+    @TenantId() tenantId: string,
+    @Param('syncLogId') syncLogId: string,
+  ): Promise<SaleSyncResult> {
+    return this.quickBooksSalesSyncService.retry(tenantId, syncLogId);
   }
 }
