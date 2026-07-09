@@ -12,6 +12,10 @@ REST API served by `apps/api` (NestJS). All routes are versioned under **`/v1`**
 - Success envelope: `{ "data": ... }`. Error envelope: `{ "statusCode", "message", "error" }`.
 - Auth: cashier logs in with a PIN and receives a session token (JWT/bearer) sent as
   `Authorization: Bearer <token>` on subsequent calls.
+- Tenant context: until auth is wired, tenant-scoped endpoints require an `x-tenant-id`
+  header (a temporary placeholder; the tenant will later be derived from the session token).
+- Not-yet-implemented write/QuickBooks flows return `501 Not Implemented` in the standard
+  error envelope.
 - Pagination: `?page=1&pageSize=25` → `{ "data": { "items": [], "total", "page", "pageSize" } }`.
 
 ## Health

@@ -1,22 +1,44 @@
-import { ConfigModule } from '@nestjs/config';
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { validateEnv } from './config/env.validation';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { PrismaModule } from './prisma/prisma.module';
+import { HealthModule } from './health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { ProductsModule } from './modules/products/products.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { SalesModule } from './modules/sales/sales.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { ReceiptsModule } from './modules/receipts/receipts.module';
+import { QuickBooksModule } from './modules/quickbooks/quickbooks.module';
+import { SyncModule } from './modules/sync/sync.module';
+import { SettingsModule } from './modules/settings/settings.module';
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
 
-/**
- * Root application module.
- *
- * Feature modules (auth, products, sales, customers, payments, quickbooks-sync)
- * will be registered here as they are built.
- */
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    PrismaModule,
+    HealthModule,
+    AuthModule,
+    UsersModule,
+    ProductsModule,
+    CustomersModule,
+    SalesModule,
+    PaymentsModule,
+    ReceiptsModule,
+    QuickBooksModule,
+    SyncModule,
+    SettingsModule,
+    AuditLogModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+  ],
 })
 export class AppModule {}
