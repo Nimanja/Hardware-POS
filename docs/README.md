@@ -12,6 +12,7 @@ This folder holds design and reference documentation for the Hardware POS projec
 | [deployment-plan.md](./deployment-plan.md)               | Environments, config, migrations, release flow.               |
 | [getting-started.md](./getting-started.md)               | How to set up and run the monorepo locally.                   |
 | [pos-features.md](./pos-features.md)                     | Cashier front-end feature list.                               |
+| [testing/](./testing/README.md)                          | Test strategy: unit/integration plans, manual QA & UAT checklists. |
 
 > QuickBooks Online remains the source of truth for products, inventory, prices, accounting,
 > and reports. The POS is the cashier sales front-end. These documents describe the target
