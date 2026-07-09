@@ -16,7 +16,8 @@ import {
 import { ItemDiscountDialog } from '@/components/pos/item-discount-dialog';
 import { ItemNoteDialog } from '@/components/pos/item-note-dialog';
 import { ManagerApprovalDialog } from '@/components/pos/manager-approval-dialog';
-import { PaymentDialog } from '@/components/pos/payment-dialog';
+import { PaymentDialog, type PaymentSubmission } from '@/components/pos/payment-dialog';
+import { PaymentSuccessDialog } from '@/components/pos/payment-success-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -34,6 +35,14 @@ import {
 import type { ClientProduct } from '@/lib/catalog';
 import { requestDiscountApproval } from '@/lib/discounts';
 import { discountLimitFor, withinDiscountLimit } from '@/lib/permissions';
+import { printCustomerReceipt, type ReceiptContext } from '@/lib/receipt-print';
+import {
+  completeSale,
+  DEV_BRANCH_ID,
+  DEV_REGISTER_ID,
+  type CompletedSale,
+  type CompleteSaleDto,
+} from '@/lib/sales';
 import { cn, formatMoney } from '@/lib/utils';
 
 interface PendingApproval {
@@ -54,6 +63,11 @@ export default function PosPage() {
   const [discountFor, setDiscountFor] = React.useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = React.useState<PendingApproval | null>(null);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [completedSale, setCompletedSale] = React.useState<CompletedSale | null>(null);
+  const [receiptCtx, setReceiptCtx] = React.useState<ReceiptContext | null>(null);
+  const [printing, setPrinting] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -175,12 +189,64 @@ export default function PosPage() {
   const customerName =
     data.customers.find((c) => c.id === customerId)?.name ?? 'Walk-in customer';
 
-  const completeSale = () => {
-    // TODO: submit to POST /sales/complete (with discount approval) in the payment task.
-    setPaymentOpen(false);
-    setCart([]);
+  const handlePaymentSubmit = async (sub: PaymentSubmission) => {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const dto: CompleteSaleDto = {
+        branchId: DEV_BRANCH_ID,
+        registerId: DEV_REGISTER_ID,
+        customerId: customerId || undefined,
+        items: cart.map((it) => ({
+          productId: it.product.id,
+          quantity: it.quantity,
+          discountType: it.discount?.type,
+          discountValue: it.discount?.value,
+          discountReason: it.discount?.reason,
+          approvalToken: it.approvalToken,
+        })),
+        payments:
+          sub.method && sub.amount > 0
+            ? [{ method: sub.method, amount: sub.amount, reference: sub.reference }]
+            : [],
+      };
+
+      const sale = await completeSale(session!, dto, { total: totals.total });
+
+      // Snapshot the cart for the receipt before clearing it.
+      setReceiptCtx({
+        currency,
+        customerName,
+        items: cart,
+        subtotal: totals.subtotal,
+        totalDiscount: totals.totalDiscount,
+        taxAmount: totals.taxAmount,
+        storeName: 'Hardware POS',
+      });
+      setCompletedSale(sale);
+      setPaymentOpen(false);
+      setCart([]);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Could not complete the sale');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handlePrintReceipt = async () => {
+    if (!completedSale || !receiptCtx) return;
+    setPrinting(true);
+    try {
+      await printCustomerReceipt(session!, completedSale, receiptCtx);
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const handleNewSale = () => {
+    setCompletedSale(null);
+    setReceiptCtx(null);
     setCustomerId('');
-    showToast('Sale completed (demo). Payment submission is wired next.');
   };
 
   return (
@@ -424,9 +490,20 @@ export default function PosPage() {
         open={paymentOpen}
         totals={totals}
         currency={currency}
-        customerName={customerName}
+        hasCustomer={!!customerId}
+        submitting={submitting}
+        error={submitError}
         onClose={() => setPaymentOpen(false)}
-        onComplete={completeSale}
+        onSubmit={handlePaymentSubmit}
+      />
+
+      <PaymentSuccessDialog
+        open={!!completedSale}
+        sale={completedSale}
+        currency={currency}
+        printing={printing}
+        onPrintReceipt={handlePrintReceipt}
+        onNewSale={handleNewSale}
       />
 
       {toast ? (

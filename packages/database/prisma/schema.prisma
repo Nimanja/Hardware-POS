@@ -33,6 +33,7 @@ enum PaymentMethod {
   CASH
   CARD
   BANK_TRANSFER
+  QR_PAYMENT
   CHECK
   STORE_CREDIT
   OTHER
