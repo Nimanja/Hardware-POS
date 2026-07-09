@@ -30,6 +30,13 @@ export class EnvironmentVariables {
   @IsOptional()
   WEB_ORIGIN?: string;
 
+  @IsString()
+  JWT_SECRET!: string;
+
+  @IsString()
+  @IsOptional()
+  JWT_EXPIRES_IN = '12h';
+
   // ── QuickBooks Online (placeholders — integration not implemented yet) ──
   @IsString()
   @IsOptional()

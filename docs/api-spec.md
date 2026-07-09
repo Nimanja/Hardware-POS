@@ -27,17 +27,44 @@ GET /v1/health
 
 ## Auth
 
+Two login methods issue the same bearer JWT (payload: `sub`, `tenantId`, `role`). Send it as
+`Authorization: Bearer <token>` on all other calls; the tenant is taken from the token.
+
 ```
-POST /v1/auth/login
-body:  { "pin": "1234" }
-200 →  { "data": { "token": "...", "user": { "id", "name", "role" } } }
+POST /v1/auth/login                   # email + password (owner / admin / accountant)
+body:  { "email": "owner@hardwarepos.test", "password": "password123" }
+200 →  { "data": { "token": "...", "user": { "id", "tenantId", "name", "email", "role" } } }
+401 →  invalid email or password
+
+POST /v1/auth/pin-login               # PIN (cashier / manager); requires x-tenant-id header
+headers: x-tenant-id: <tenantId>
+body:  { "pin": "1111" }
+200 →  { "data": { "token": "...", "user": { ... } } }
 401 →  invalid PIN
 
-POST /v1/auth/approve-discount        # inline manager approval for a high discount
-body:  { "managerPin": "9999", "saleDraftId": "...", "saleItemId": "...", "discount": { "type": "PERCENT", "value": "25" } }
-200 →  { "data": { "approvedBy": "<userId>" } }
-403 →  not a manager / invalid PIN
+GET  /v1/auth/me                      # current user + effective permissions
+200 →  { "data": { "id", "tenantId", "name", "email", "role", "branchId", "permissions": [] } }
+
+POST /v1/auth/approve-discount        # inline manager approval (cashier submits a manager PIN)
+body:  { "managerPin": "2222", "discountType": "PERCENTAGE", "discountValue": 25 }
+200 →  { "data": { "approvedByUserId": "...", "approvedByName": "Manager" } }
+401 →  PIN does not authorize discount approval
 ```
+
+### Roles & permissions
+
+Roles: `OWNER`, `ADMIN`, `MANAGER`, `CASHIER`, `ACCOUNTANT`. Routes are protected by a global
+JWT guard plus role/permission guards. Summary of enforced access:
+
+| Capability                         | Roles                          |
+| ---------------------------------- | ------------------------------ |
+| Create sales / take payments       | Cashier, Manager, Owner, Admin |
+| Approve high discounts             | Manager, Owner, Admin          |
+| View sync logs & QuickBooks status | Accountant, Owner, Admin       |
+| Connect QuickBooks / manage users / settings | Owner, Admin         |
+| Everything                         | Owner, Admin                   |
+
+Unauthenticated → `401`; authenticated but not permitted → `403`.
 
 ## Products (read-only cache)
 

@@ -1,20 +1,26 @@
 import { BadRequestException, createParamDecorator, ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
 
+import { AuthenticatedUser } from '../../modules/auth/auth.types';
+
 /**
  * Resolves the current tenant id.
  *
- * TODO(auth): this is a placeholder that reads the `x-tenant-id` request header.
- * Once the auth module issues session tokens, the tenant id will come from the
- * authenticated principal instead of a client-supplied header.
+ * Prefers the authenticated user's tenant (set by JwtAuthGuard). Falls back to
+ * the `x-tenant-id` header for public, pre-auth flows such as PIN login where a
+ * POS terminal supplies its tenant.
  */
 export const TenantId = createParamDecorator((_data: unknown, ctx: ExecutionContext): string => {
-  const request = ctx.switchToHttp().getRequest<Request>();
-  const tenantId = request.headers['x-tenant-id'];
+  const request = ctx.switchToHttp().getRequest<Request & { user?: AuthenticatedUser }>();
 
-  if (typeof tenantId !== 'string' || tenantId.length === 0) {
-    throw new BadRequestException('Missing required header: x-tenant-id');
+  if (request.user?.tenantId) {
+    return request.user.tenantId;
   }
 
-  return tenantId;
+  const header = request.headers['x-tenant-id'];
+  if (typeof header === 'string' && header.length > 0) {
+    return header;
+  }
+
+  throw new BadRequestException('Unable to resolve tenant (no session or x-tenant-id header)');
 });

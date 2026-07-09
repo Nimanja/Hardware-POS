@@ -26,6 +26,7 @@ enum UserRole {
   MANAGER
   ADMIN
   OWNER
+  ACCOUNTANT
 }
 
 enum PaymentMethod {
@@ -142,18 +143,19 @@ model Register {
 // ─────────────────────────────────────────────────────────────
 
 model User {
-  id          String    @id @default(cuid())
-  tenantId    String
-  branchId    String?
-  roleId      String?
-  role        UserRole  @default(CASHIER)
-  name        String
-  email       String?
-  pinHash     String
-  isActive    Boolean   @default(true)
-  lastLoginAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  tenantId     String
+  branchId     String?
+  roleId       String?
+  role         UserRole  @default(CASHIER)
+  name         String
+  email        String?
+  passwordHash String?
+  pinHash      String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   tenant            Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch            Branch?    @relation(fields: [branchId], references: [id])

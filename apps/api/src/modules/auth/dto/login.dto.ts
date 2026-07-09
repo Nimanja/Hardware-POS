@@ -1,8 +1,11 @@
-import { IsString, Length, Matches } from 'class-validator';
+import { IsEmail, IsString, MinLength } from 'class-validator';
 
+/** Admin / accountant / owner email + password login. */
 export class LoginDto {
+  @IsEmail()
+  email!: string;
+
   @IsString()
-  @Length(4, 8)
-  @Matches(/^\d+$/, { message: 'pin must be numeric' })
-  pin!: string;
+  @MinLength(6)
+  password!: string;
 }
