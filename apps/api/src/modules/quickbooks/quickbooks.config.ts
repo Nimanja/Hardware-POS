@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 const DEFAULT_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
 const DEFAULT_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const DEFAULT_REVOKE_URL = 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke';
+const SANDBOX_API_BASE = 'https://sandbox-quickbooks.api.intuit.com';
+const PRODUCTION_API_BASE = 'https://quickbooks.api.intuit.com';
 
 /** Accounting scope; enough to read items/customers and write sales documents. */
 export const QBO_SCOPE = 'com.intuit.quickbooks.accounting';
@@ -16,6 +18,7 @@ export interface ResolvedQuickBooksConfig {
   authorizeUrl: string;
   tokenUrl: string;
   revokeUrl: string;
+  apiBase: string;
   encryptionKey: string;
   webOrigin: string;
 }
@@ -43,14 +46,18 @@ export class QuickBooksConfig {
       );
     }
 
+    const environment = this.config.get<string>('QUICKBOOKS_ENVIRONMENT', 'sandbox');
+    const defaultApiBase = environment === 'production' ? PRODUCTION_API_BASE : SANDBOX_API_BASE;
+
     return {
       clientId: clientId!,
       clientSecret: clientSecret!,
       redirectUri: redirectUri!,
-      environment: this.config.get<string>('QUICKBOOKS_ENVIRONMENT', 'sandbox'),
+      environment,
       authorizeUrl: this.config.get<string>('QUICKBOOKS_AUTHORIZE_URL', DEFAULT_AUTHORIZE_URL),
       tokenUrl: this.config.get<string>('QUICKBOOKS_TOKEN_URL', DEFAULT_TOKEN_URL),
       revokeUrl: this.config.get<string>('QUICKBOOKS_REVOKE_URL', DEFAULT_REVOKE_URL),
+      apiBase: this.config.get<string>('QUICKBOOKS_API_BASE', defaultApiBase),
       encryptionKey: encryptionKey!,
       webOrigin: this.config.get<string>('WEB_ORIGIN', 'http://localhost:3000'),
     };

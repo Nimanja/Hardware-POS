@@ -242,6 +242,20 @@ GET  /v1/quickbooks/status             # quickbooks:read — never exposes token
 Access tokens are auto-refreshed (using the stored refresh token) when expired; refresh happens
 server-side only and is used by the sync worker.
 
+## QuickBooks product sync
+
+Pulls the item catalogue from QuickBooks into the local product cache. Uses the stored access
+token (refreshing it first if expired), queries `Item` records, imports **Inventory** and
+**NonInventory** items (other types such as `Service` are skipped), and upserts them by
+`(tenantId, quickbooksItemId)`. Mapped fields: `name`, `sku`, `description`, `unitPrice`,
+`quantityOnHand`, `type`, `isActive`. Each run records an inbound `SyncLog` entry.
+
+```
+POST /v1/quickbooks/sync-products      # quickbooks:manage — requires an active connection
+200 → { "data": { "created": 4, "updated": 0, "skipped": 2, "failed": 0, "total": 6 } }
+404 → QuickBooks is not connected
+```
+
 ## Error codes
 
 | Status | Meaning                                             |

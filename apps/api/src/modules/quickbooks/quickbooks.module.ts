@@ -4,10 +4,11 @@ import { QuickBooksConfig } from './quickbooks.config';
 import { QuickBooksController } from './quickbooks.controller';
 import { QuickBooksRepository } from './quickbooks.repository';
 import { QuickBooksService } from './quickbooks.service';
+import { QuickBooksSyncService } from './quickbooks-sync.service';
 
 @Module({
   controllers: [QuickBooksController],
-  providers: [QuickBooksService, QuickBooksRepository, QuickBooksConfig],
-  exports: [QuickBooksService],
+  providers: [QuickBooksService, QuickBooksSyncService, QuickBooksRepository, QuickBooksConfig],
+  exports: [QuickBooksService, QuickBooksSyncService],
 })
 export class QuickBooksModule {}

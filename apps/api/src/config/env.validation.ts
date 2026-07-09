@@ -56,6 +56,11 @@ export class EnvironmentVariables {
   @IsOptional()
   QUICKBOOKS_ENVIRONMENT = 'sandbox';
 
+  /** Optional override for the QuickBooks Accounting API base (used in tests). */
+  @IsString()
+  @IsOptional()
+  QUICKBOOKS_API_BASE?: string;
+
   /** Optional overrides for the Intuit OAuth endpoints (used in tests). */
   @IsString()
   @IsOptional()

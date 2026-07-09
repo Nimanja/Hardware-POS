@@ -9,10 +9,14 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Permission } from '../auth/permissions';
 import { QuickBooksCallbackQuery, QuickBooksConnectionStatus } from './quickbooks.interfaces';
 import { QuickBooksService } from './quickbooks.service';
+import { QuickBooksSyncService, type SyncProductsSummary } from './quickbooks-sync.service';
 
 @Controller('quickbooks')
 export class QuickBooksController {
-  constructor(private readonly quickBooksService: QuickBooksService) {}
+  constructor(
+    private readonly quickBooksService: QuickBooksService,
+    private readonly quickBooksSyncService: QuickBooksSyncService,
+  ) {}
 
   /** Redirect the admin to the QuickBooks authorization screen. Owner/admin only. */
   @Get('connect')
@@ -46,5 +50,13 @@ export class QuickBooksController {
   @RequirePermissions(Permission.QUICKBOOKS_READ)
   status(@TenantId() tenantId: string): Promise<QuickBooksConnectionStatus> {
     return this.quickBooksService.getConnectionStatus(tenantId);
+  }
+
+  /** Pull inventory + non-inventory items from QuickBooks into the local cache. */
+  @Post('sync-products')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.QUICKBOOKS_MANAGE)
+  syncProducts(@TenantId() tenantId: string): Promise<SyncProductsSummary> {
+    return this.quickBooksSyncService.syncProducts(tenantId);
   }
 }
