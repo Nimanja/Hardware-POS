@@ -216,14 +216,31 @@ POST /v1/sync/products/refresh        # on-demand inbound catalog pull (admin)
 202 → { "data": { "started": true } }
 ```
 
-## QuickBooks connection (admin)
+## QuickBooks connection (OAuth 2.0)
+
+Real Intuit OAuth 2.0. Configure `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET`,
+`QUICKBOOKS_REDIRECT_URI`, `QUICKBOOKS_ENVIRONMENT`, and `TOKEN_ENCRYPTION_KEY`. Access and
+refresh tokens are stored **encrypted at rest** (AES-256-GCM) and never returned to the client.
 
 ```
-GET  /v1/quickbooks/connect           # 302 → QBO OAuth consent
-GET  /v1/quickbooks/callback          # OAuth redirect target; stores tokens + realmId
-GET  /v1/quickbooks/status
+GET  /v1/quickbooks/connect            # owner/admin — 302 → Intuit authorization screen
+                                       # state is a signed, short-lived JWT carrying the tenant
+
+GET  /v1/quickbooks/callback           # public redirect target from Intuit
+                                       # verifies state, exchanges the code for tokens, stores
+                                       # them (encrypted) + realmId + expiry, then
+                                       # 302 → {WEB_ORIGIN}/quickbooks?connected=1
+                                       # on failure → …/quickbooks?error=<message>
+
+POST /v1/quickbooks/disconnect         # owner/admin — revokes the token and removes the connection
+200 → { "data": { "disconnected": true } }
+
+GET  /v1/quickbooks/status             # quickbooks:read — never exposes tokens
 200 → { "data": { "connected": true, "realmId": "...", "environment": "sandbox", "tokenExpiresAt": "..." } }
 ```
+
+Access tokens are auto-refreshed (using the stored refresh token) when expired; refresh happens
+server-side only and is used by the sync worker.
 
 ## Error codes
 

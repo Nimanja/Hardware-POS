@@ -1,7 +1,5 @@
 /**
- * Contracts for the QuickBooks Online integration. The concrete provider
- * (OAuth 2.0 + Accounting API) is intentionally NOT implemented yet — these
- * interfaces define the surface the rest of the app will depend on.
+ * Contracts for the QuickBooks Online OAuth 2.0 integration.
  */
 
 export interface QuickBooksConnectionStatus {
@@ -11,22 +9,20 @@ export interface QuickBooksConnectionStatus {
   tokenExpiresAt: string | null;
 }
 
-export interface QuickBooksAuthUrl {
-  /** URL to redirect the admin to for the QBO consent screen. */
-  url: string;
+/** Raw token response from the Intuit token endpoint. */
+export interface QuickBooksTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  x_refresh_token_expires_in: number;
 }
 
-export interface QuickBooksCallbackResult {
-  connected: boolean;
-  realmId: string;
-}
-
-/**
- * Port implemented later by the real QuickBooks client. Kept here so services
- * can be wired against the abstraction rather than a concrete SDK.
- */
-export interface QuickBooksPort {
-  getAuthorizationUrl(tenantId: string): Promise<QuickBooksAuthUrl>;
-  handleCallback(tenantId: string, code: string, realmId: string): Promise<QuickBooksCallbackResult>;
-  getConnectionStatus(tenantId: string): Promise<QuickBooksConnectionStatus>;
+/** Query params on the OAuth redirect callback. */
+export interface QuickBooksCallbackQuery {
+  code?: string;
+  state?: string;
+  realmId?: string;
+  error?: string;
+  error_description?: string;
 }

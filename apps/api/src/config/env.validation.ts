@@ -37,22 +37,42 @@ export class EnvironmentVariables {
   @IsOptional()
   JWT_EXPIRES_IN = '12h';
 
-  // ── QuickBooks Online (placeholders — integration not implemented yet) ──
+  // ── QuickBooks Online OAuth 2.0 ──
+  // Optional so the app boots without QBO configured; the endpoints validate
+  // presence when a connection is initiated.
   @IsString()
   @IsOptional()
-  QBO_CLIENT_ID?: string;
+  QUICKBOOKS_CLIENT_ID?: string;
 
   @IsString()
   @IsOptional()
-  QBO_CLIENT_SECRET?: string;
+  QUICKBOOKS_CLIENT_SECRET?: string;
 
   @IsString()
   @IsOptional()
-  QBO_REDIRECT_URI?: string;
+  QUICKBOOKS_REDIRECT_URI?: string;
 
   @IsString()
   @IsOptional()
-  QBO_ENVIRONMENT?: string;
+  QUICKBOOKS_ENVIRONMENT = 'sandbox';
+
+  /** Optional overrides for the Intuit OAuth endpoints (used in tests). */
+  @IsString()
+  @IsOptional()
+  QUICKBOOKS_AUTHORIZE_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  QUICKBOOKS_TOKEN_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  QUICKBOOKS_REVOKE_URL?: string;
+
+  /** Key used to encrypt OAuth tokens at rest (AES-256-GCM). Required for QBO. */
+  @IsString()
+  @IsOptional()
+  TOKEN_ENCRYPTION_KEY?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {
