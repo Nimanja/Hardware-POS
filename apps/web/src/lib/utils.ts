@@ -10,3 +10,8 @@ export function cn(...inputs: ClassValue[]): string {
 export function formatMoney(amount: number, currency = 'USD'): string {
   return `${currency} ${amount.toFixed(2)}`;
 }
+
+/** Round to 2 decimal places (currency). */
+export function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
