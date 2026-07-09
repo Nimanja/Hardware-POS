@@ -68,14 +68,33 @@ Unauthenticated → `401`; authenticated but not permitted → `403`.
 
 ## Products (read-only cache)
 
+QuickBooks Online is the inventory master; products are a **read-only local cache**. There are
+no create/update/delete product endpoints — the POS never edits stock. The cache is refreshed
+only via sync (mock sync below, real QuickBooks sync later).
+
 ```
-GET /v1/products?query=hammer&page=1&pageSize=25
-200 → { "data": { "items": [ { "id", "qboId", "sku", "barcode", "name", "price", "quantityOnHand" } ], "total", "page", "pageSize" } }
+GET /v1/products?search=hammer&page=1&pageSize=25          # free-text (name/sku/barcode)
+200 → { "data": { "items": [ { "id", "quickbooksItemId", "sku", "barcode", "name", "unitType", "unitPrice", "quantityOnHand", "syncStatus" } ], "total", "page", "pageSize" } }
+
+GET /v1/products/search?name=&sku=&barcode=&categoryId=&isActive=true   # structured filters (AND)
+200 → paginated products
 
 GET /v1/products/barcode/{barcode}
-200 → { "data": { "id", "name", "price", "quantityOnHand", ... } }
+200 → { "data": { "id", "name", "unitPrice", "quantityOnHand", ... } }
 404 → unknown barcode
+
+GET /v1/products/{id}
+200 → single product   |   404 → not found
+
+POST /v1/products/sync/mock            # simulate a QuickBooks catalog pull (owner/admin only)
+200 → { "data": { "created", "updated", "total", "categories" } }
+403 → lacks quickbooks:manage
+
+GET /v1/categories                     # product categories with product counts
+200 → { "data": [ { "id", "name", "parentId", "isActive", "_count": { "products" } } ] }
 ```
+
+All product/category read routes require `product:read`; every role has it.
 
 ## Customers (read-only cache)
 

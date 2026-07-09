@@ -7,6 +7,8 @@
 import { PrismaClient, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
+import { MOCK_HARDWARE_PRODUCTS, mockCategoryId, mockCategoryNames } from '../src/mock-catalog';
+
 const prisma = new PrismaClient();
 
 const TENANT_ID = 'tnt_dev';
@@ -103,8 +105,40 @@ async function main(): Promise<void> {
     });
   }
 
+  // Product catalog (mirrors the mock QuickBooks sync so a fresh dev DB has stock).
+  for (const name of mockCategoryNames()) {
+    const id = mockCategoryId(tenant.id, name);
+    await prisma.productCategory.upsert({
+      where: { id },
+      update: { name, isActive: true },
+      create: { id, tenantId: tenant.id, name },
+    });
+  }
+
+  for (const p of MOCK_HARDWARE_PRODUCTS) {
+    const data = {
+      name: p.name,
+      sku: p.sku,
+      barcode: p.barcode,
+      categoryId: mockCategoryId(tenant.id, p.category),
+      unitType: p.unitType,
+      unitPrice: p.unitPrice,
+      quantityOnHand: p.quantityOnHand,
+      type: p.type,
+      isActive: true,
+      syncStatus: 'SYNCED' as const,
+      lastSyncedAt: new Date(),
+    };
+    await prisma.product.upsert({
+      where: { tenantId_quickbooksItemId: { tenantId: tenant.id, quickbooksItemId: p.quickbooksItemId } },
+      update: data,
+      create: { tenantId: tenant.id, quickbooksItemId: p.quickbooksItemId, ...data },
+    });
+  }
+
   /* eslint-disable no-console */
   console.log('Seeded tenant:', tenant.id);
+  console.log(`Seeded ${MOCK_HARDWARE_PRODUCTS.length} products across ${mockCategoryNames().length} categories`);
   console.log('Login users:');
   console.log('  Owner       owner@hardwarepos.test / password123');
   console.log('  Accountant  accountant@hardwarepos.test / password123');
