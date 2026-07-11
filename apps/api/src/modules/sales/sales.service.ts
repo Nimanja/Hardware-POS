@@ -202,7 +202,7 @@ export class SalesService {
 
         const quantity = item.quantity;
         const onHand = Number(product.quantityOnHand);
-        if (quantity > onHand) {
+        if (product.trackInventory && quantity > onHand) {
           throw new BadRequestException(
             `Insufficient stock for ${product.name} (on hand ${onHand}, requested ${quantity})`,
           );
@@ -232,6 +232,7 @@ export class SalesService {
           productId: product.id,
           productName: product.name,
           sku: product.sku,
+          trackInventory: product.trackInventory,
           unitPrice: cachedPrice,
           quantity,
           discountType: item.discountType ?? null,

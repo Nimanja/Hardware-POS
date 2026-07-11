@@ -1,7 +1,6 @@
 /**
  * Thin API client for the NestJS backend. Attaches the session bearer token and
- * unwraps the standard `{ data }` envelope. Ready for real calls; the app uses a
- * mock session by default (see lib/auth), so screens render without a backend.
+ * unwraps the standard `{ data }` envelope.
  */
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/v1';

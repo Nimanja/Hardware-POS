@@ -20,7 +20,7 @@ function esc(v: unknown): string {
   return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** Minimal printable receipt used for the demo session (or as a fallback). */
+/** Minimal printable receipt used as a fallback when the server render fails. */
 function clientReceiptHtml(sale: CompletedSale, ctx: ReceiptContext): string {
   const rows = ctx.items
     .map((it) => {
@@ -60,24 +60,22 @@ function openPrintWindow(html: string): void {
   window.setTimeout(() => win.print(), 400);
 }
 
-/** Print the customer receipt: server-rendered for real sales, client-side for demo. */
+/** Print the customer receipt: server-rendered, with a client-side fallback. */
 export async function printCustomerReceipt(
   session: Session,
   sale: CompletedSale,
   ctx: ReceiptContext,
 ): Promise<void> {
-  if (!sale.demo) {
-    try {
-      const res = await api.post<{ printJob: { html: string } }>(
-        `/receipts/${sale.id}/customer`,
-        undefined,
-        { token: session.token, tenantId: session.user.tenantId },
-      );
-      openPrintWindow(res.printJob.html);
-      return;
-    } catch {
-      // fall through to the client-rendered receipt
-    }
+  try {
+    const res = await api.post<{ printJob: { html: string } }>(
+      `/receipts/${sale.id}/customer`,
+      undefined,
+      { token: session.token, tenantId: session.user.tenantId },
+    );
+    openPrintWindow(res.printJob.html);
+    return;
+  } catch {
+    // fall through to the client-rendered receipt
   }
   openPrintWindow(clientReceiptHtml(sale, ctx));
 }

@@ -6,14 +6,6 @@ import type { DiscountType } from './cart';
 export const DEV_BRANCH_ID = 'brn_dev';
 export const DEV_REGISTER_ID = 'reg_dev';
 
-/**
- * The offline demo session uses a `mock.*` token and cannot reach the API. Real
- * logins (email/PIN) issue a JWT. Screens that read live data should gate on this.
- */
-export function isMockSession(session: Session): boolean {
-  return session.token.startsWith('mock.');
-}
-
 function auth(session: Session): { token: string; tenantId: string } {
   return { token: session.token, tenantId: session.user.tenantId };
 }
@@ -64,8 +56,6 @@ export interface CompletedSale {
   paymentStatus: string;
   quickbooksDocumentType: string | null;
   syncStatus: string;
-  /** True for the offline demo (no real sale persisted). */
-  demo: boolean;
 }
 
 interface ApiSale {
@@ -79,37 +69,11 @@ interface ApiSale {
   syncStatus: string;
 }
 
-function paymentStatusFor(total: number, paid: number): string {
-  if (paid <= 0) return 'UNPAID';
-  return paid >= total ? 'PAID' : 'PARTIAL';
-}
-
-/**
- * Complete a sale. With a real session this calls POST /sales/complete. In the
- * offline demo session it simulates a completed sale so the flow is testable.
- */
+/** Complete a sale via POST /sales/complete. */
 export async function completeSale(
   session: Session,
   dto: CompleteSaleDto,
-  totals: { total: number },
 ): Promise<CompletedSale> {
-  const paidAmount = Math.round(dto.payments.reduce((s, p) => s + p.amount, 0) * 100) / 100;
-
-  if (isMockSession(session)) {
-    const suffix = Math.floor(Math.random() * 9000 + 1000);
-    return {
-      id: `demo-${suffix}`,
-      saleNumber: `S-DEMO-${suffix}`,
-      total: totals.total,
-      paidAmount,
-      balanceAmount: Math.max(0, Math.round((totals.total - paidAmount) * 100) / 100),
-      paymentStatus: paymentStatusFor(totals.total, paidAmount),
-      quickbooksDocumentType: paidAmount >= totals.total ? 'SALES_RECEIPT' : 'INVOICE',
-      syncStatus: 'PENDING',
-      demo: true,
-    };
-  }
-
   const sale = await api.post<ApiSale>('/sales/complete', dto, auth(session));
   return {
     id: sale.id,
@@ -120,7 +84,6 @@ export async function completeSale(
     paymentStatus: sale.paymentStatus,
     quickbooksDocumentType: sale.quickbooksDocumentType,
     syncStatus: sale.syncStatus,
-    demo: false,
   };
 }
 
@@ -275,11 +238,8 @@ function buildQuery(q: SalesQuery): string {
   return params.toString();
 }
 
-/** Fetch a page of the sales history. Returns an empty page for the offline demo. */
+/** Fetch a page of the sales history. */
 export async function fetchSales(session: Session, query: SalesQuery = {}): Promise<SalesPage> {
-  if (isMockSession(session)) {
-    return { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 25 };
-  }
   return api.get<SalesPage>(`/sales?${buildQuery(query)}`, auth(session));
 }
 

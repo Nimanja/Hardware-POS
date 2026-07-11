@@ -24,41 +24,17 @@ export interface Session {
 const STORAGE_KEY = 'hpos.session';
 const DEV_TENANT = 'tnt_dev';
 
-/** Seeded dev users — used for the mock-session quick logins. */
-export const MOCK_USERS = {
-  owner: { id: 'usr_owner', name: 'Owner', email: 'owner@hardwarepos.test', role: 'OWNER' },
-  manager: { id: 'usr_manager', name: 'Manager', email: null, role: 'MANAGER' },
-  cashier: { id: 'usr_cashier', name: 'Cashier', email: null, role: 'CASHIER' },
-  accountant: {
-    id: 'usr_accountant',
-    name: 'Accountant',
-    email: 'accountant@hardwarepos.test',
-    role: 'ACCOUNTANT',
-  },
-} satisfies Record<string, { id: string; name: string; email: string | null; role: UserRole }>;
-
 interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   isAuthenticated: boolean;
   hasPermission: (permission: Permission) => boolean;
-  loginMock: (key: keyof typeof MOCK_USERS) => void;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   loginWithPin: (pin: string) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
-
-function buildMockSession(key: keyof typeof MOCK_USERS): Session {
-  const u = MOCK_USERS[key];
-  return {
-    token: `mock.${key}`,
-    user: { ...u, tenantId: DEV_TENANT, permissions: permissionsForRole(u.role) },
-    branchName: 'Main Branch',
-    registerName: 'Register 1',
-  };
-}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = React.useState<Session | null>(null);
@@ -67,7 +43,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) setSession(JSON.parse(raw) as Session);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Session;
+        // Stale sessions from the removed offline demo mode can't reach the API.
+        if (parsed.token.startsWith('mock.')) {
+          window.localStorage.removeItem(STORAGE_KEY);
+        } else {
+          setSession(parsed);
+        }
+      }
     } catch {
       // ignore malformed storage
     }
@@ -80,11 +64,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (next) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     else window.localStorage.removeItem(STORAGE_KEY);
   }, []);
-
-  const loginMock = React.useCallback(
-    (key: keyof typeof MOCK_USERS) => persist(buildMockSession(key)),
-    [persist],
-  );
 
   const loginWithEmail = React.useCallback(
     async (email: string, password: string) => {
@@ -125,12 +104,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       isAuthenticated: !!session,
       hasPermission: (p) => !!session?.user.permissions.includes(p),
-      loginMock,
       loginWithEmail,
       loginWithPin,
       logout: () => persist(null),
     }),
-    [session, loading, loginMock, loginWithEmail, loginWithPin, persist],
+    [session, loading, loginWithEmail, loginWithPin, persist],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

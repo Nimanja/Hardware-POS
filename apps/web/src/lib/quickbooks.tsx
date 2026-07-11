@@ -2,8 +2,6 @@
 
 import * as React from 'react';
 
-import { MOCK_PRODUCTS } from './mock-data';
-
 export type SyncState = 'SYNCED' | 'SYNCING' | 'FAILED' | 'PENDING' | 'NOT_SYNCED';
 
 export interface QbCompany {
@@ -50,14 +48,29 @@ export interface QbState {
 
 const STORAGE_KEY = 'hpos.quickbooks';
 
-const SEED_PRODUCTS: QbProduct[] = MOCK_PRODUCTS.map((p, i) => ({
-  id: p.id,
-  name: p.name,
-  sku: p.sku,
+// Simulated QBO catalog (mirrors the dev seed). This whole provider is a
+// client-side simulation pending a rewire to the real /quickbooks API.
+const SEED_PRODUCTS: QbProduct[] = (
+  [
+    ['p1', 'Cement 50kg Bag', 'CEM-50', 2650, 120],
+    ['p2', 'PVC Pipe 2 inch', 'PVC-2IN', 1450, 200],
+    ['p3', 'Paint Brush 2 inch', 'BRSH-2IN', 380, 350],
+    ['p4', 'Door Lock Set', 'LOCK-STD', 4850, 60],
+    ['p5', 'Electrical Wire 1mm', 'WIRE-1MM', 95, 5000],
+    ['p6', 'Tile Adhesive 20kg', 'ADH-20', 3400, 90],
+    ['p7', 'Screw Box 1 inch', 'SCRW-1IN', 1050, 240],
+    ['p8', 'Safety Gloves', 'GLOV-STD', 640, 300],
+    ['p9', 'Water Tap', 'TAP-STD', 2100, 150],
+    ['p10', 'Wall Paint 4L', 'PAINT-4L', 6750, 80],
+  ] as const
+).map(([id, name, sku, unitPrice, quantityOnHand], i) => ({
+  id,
+  name,
+  sku,
   quickbooksItemId: `QBO-ITEM-${1001 + i}`,
-  unitPrice: p.unitPrice,
-  quantityOnHand: p.quantityOnHand,
-  syncStatus: 'SYNCED',
+  unitPrice,
+  quantityOnHand,
+  syncStatus: 'SYNCED' as const,
   lastSyncISO: '2026-07-09T09:42:00Z',
 }));
 

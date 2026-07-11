@@ -58,6 +58,8 @@ export interface ComputedLine {
   productId: string;
   productName: string;
   sku: string | null;
+  /** Whether the sale should decrement the product's on-hand stock. */
+  trackInventory: boolean;
   unitPrice: number;
   quantity: number;
   discountType: DiscountType | null;

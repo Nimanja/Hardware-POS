@@ -14,15 +14,26 @@
 # 1. Install dependencies for every workspace
 pnpm install
 
-# 2. Create local env files from the examples
-cp .env.example .env
+# 2. Start PostgreSQL (or point DATABASE_URL at an existing instance)
+docker compose up -d
+
+# 3. Create local env files from the examples.
+#    apps/api/.env is what the API reads (DATABASE_URL + JWT_SECRET are required);
+#    packages/database/.env is what the Prisma CLI reads;
+#    apps/web/.env only needs NEXT_PUBLIC_API_URL (must include the /v1 suffix).
 cp apps/web/.env.example apps/web/.env
 cp apps/api/.env.example apps/api/.env
 cp packages/database/.env.example packages/database/.env
 
-# 3. Generate the Prisma client
+# 4. Generate the Prisma client, apply migrations, and seed dev data
 pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
 ```
+
+The seed creates the demo tenant with branch `brn_dev` / register `reg_dev`, ten products, and
+these logins: `owner@hardwarepos.test` / `password123` (Owner), `accountant@hardwarepos.test` /
+`password123`, Manager PIN `2222`, Cashier PIN `1111`.
 
 ## Running in development
 

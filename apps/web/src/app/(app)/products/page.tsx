@@ -24,7 +24,6 @@ import {
   type ProductsQuery,
   type ProductSyncStatus,
 } from '@/lib/products-api';
-import { isMockSession } from '@/lib/sales';
 import { cn, formatMoney } from '@/lib/utils';
 
 const PAGE_SIZES = [20, 30, 40, 50];
@@ -36,7 +35,6 @@ function isLowStock(p: ManagedProduct): boolean {
 export default function ProductsPage() {
   const { session, hasPermission } = useAuth();
   const canManage = hasPermission(Permission.PRODUCT_MANAGE);
-  const mock = session ? isMockSession(session) : true;
 
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -65,9 +63,9 @@ export default function ProductsPage() {
   }, [debouncedSearch, categoryId, stockStatus, active, syncStatus, pageSize]);
 
   React.useEffect(() => {
-    if (!session || mock) return;
+    if (!session) return;
     fetchCategories(session).then(setCategories).catch(() => setCategories([]));
-  }, [session, mock]);
+  }, [session]);
 
   React.useEffect(() => {
     if (!session) return;
@@ -131,12 +129,6 @@ export default function ProductsPage() {
           ) : undefined
         }
       />
-
-      {mock ? (
-        <div className="rounded-xl border border-warning/40 bg-warning-soft/50 p-4 text-sm text-warning">
-          You are signed in with the offline demo. Sign in with a store account to manage products.
-        </div>
-      ) : null}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">

@@ -209,7 +209,7 @@ export default function PaymentPage() {
         orderDiscountReason: cart.orderDiscount?.reason,
         orderApprovalToken: cart.orderApprovalToken,
       };
-      const sale = await completeSale(session!, dto, { total });
+      const sale = await completeSale(session!, dto);
       const ctx: ReceiptContext = {
         currency,
         customerName,
@@ -256,7 +256,7 @@ export default function PaymentPage() {
         currency={currency}
         printing={printing}
         onPrint={printReceipt}
-        onViewSale={completed.demo ? undefined : () => router.push(`/sales/${completed.id}`)}
+        onViewSale={() => router.push(`/sales/${completed.id}`)}
         onNewSale={() => router.push('/pos')}
       />
     );

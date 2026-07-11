@@ -10,7 +10,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
 import { Permission } from '@/lib/permissions';
 import { fetchCategories, type Category } from '@/lib/products-api';
-import { isMockSession } from '@/lib/sales';
 
 export default function NewProductPage() {
   const { session, hasPermission } = useAuth();
@@ -18,14 +17,12 @@ export default function NewProductPage() {
   const [categories, setCategories] = React.useState<Category[]>([]);
 
   React.useEffect(() => {
-    if (session && !isMockSession(session)) {
+    if (session) {
       fetchCategories(session).then(setCategories).catch(() => setCategories([]));
     }
   }, [session]);
 
   if (!session) return null;
-
-  const mock = isMockSession(session);
 
   return (
     <div className="space-y-6">
@@ -40,12 +37,6 @@ export default function NewProductPage() {
         <Card>
           <CardContent className="py-16 text-center text-sm text-muted-foreground">
             You don’t have permission to add products.
-          </CardContent>
-        </Card>
-      ) : mock ? (
-        <Card>
-          <CardContent className="py-16 text-center text-sm text-muted-foreground">
-            Sign in with a store account to create products.
           </CardContent>
         </Card>
       ) : (

@@ -1,6 +1,5 @@
 import { api } from './api';
 import type { Session } from './auth';
-import { isMockSession } from './sales';
 
 export type ProductSyncStatus = 'NOT_SYNCED' | 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
 
@@ -120,9 +119,6 @@ function buildQuery(q: ProductsQuery): string {
 }
 
 export async function fetchProducts(session: Session, query: ProductsQuery = {}): Promise<ProductsPage> {
-  if (isMockSession(session)) {
-    return { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 25 };
-  }
   const res = await api.get<{ items: ApiProduct[]; total: number; page: number; pageSize: number }>(
     `/products?${buildQuery(query)}`,
     auth(session),
@@ -195,6 +191,5 @@ export async function syncProductToQuickBooks(
 }
 
 export async function fetchCategories(session: Session): Promise<Category[]> {
-  if (isMockSession(session)) return [];
   return api.get<Category[]>('/categories', auth(session));
 }

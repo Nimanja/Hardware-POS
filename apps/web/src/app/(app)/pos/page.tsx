@@ -22,7 +22,6 @@ import { ManagerApprovalDialog } from '@/components/pos/manager-approval-dialog'
 import { OrderDiscountDialog } from '@/components/pos/order-discount-dialog';
 import { QuickAddCustomerDialog } from '@/components/pos/quick-add-customer-dialog';
 import { ProductImage } from '@/components/product-image';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -48,7 +47,7 @@ export default function PosPage() {
   const router = useRouter();
   const data = useCheckoutData(session!);
   const cart = usePosCart();
-  const canAddCustomer = hasPermission(Permission.CUSTOMER_MANAGE) && data.source === 'api';
+  const canAddCustomer = hasPermission(Permission.CUSTOMER_MANAGE);
 
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('All');
@@ -211,10 +210,19 @@ export default function PosPage() {
               className="pl-10"
             />
           </div>
-          <Badge variant={data.source === 'api' ? 'success' : 'neutral'}>
-            {data.source === 'api' ? 'Live data' : 'Demo data'}
-          </Badge>
         </div>
+
+        {data.error ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger">
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Couldn&apos;t load the product catalog: {data.error}
+            </span>
+            <Button variant="outline" size="sm" onClick={data.reload}>
+              Retry
+            </Button>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-2">
           {categories.map((c) => (

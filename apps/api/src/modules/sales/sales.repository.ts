@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, Product } from '@hardware-pos/database';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -187,6 +187,7 @@ export class SalesRepository {
         },
         include: saleInclude,
       });
+      await this.decrementStock(tx, input.tenantId, input.computed.lines);
       await this.syncQueue.enqueueSaleSync(tx, input.tenantId, sale.id);
       return sale;
     });
@@ -229,9 +230,41 @@ export class SalesRepository {
         },
         include: saleInclude,
       });
+      await this.decrementStock(tx, tenantId, input.computed.lines);
       await this.syncQueue.enqueueSaleSync(tx, tenantId, sale.id);
       return sale;
     });
+  }
+
+  /**
+   * Decrement on-hand stock for tracked products within the sale transaction.
+   * The conditional update is the authoritative guard against overselling under
+   * concurrency; a zero-row update rolls the whole sale back.
+   */
+  private async decrementStock(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    lines: ComputedLine[],
+  ): Promise<void> {
+    // Aggregate per product: a cart may repeat the same productId across lines.
+    const totals = new Map<string, { name: string; qty: number }>();
+    for (const line of lines) {
+      if (!line.trackInventory) continue;
+      const prev = totals.get(line.productId);
+      totals.set(line.productId, {
+        name: line.productName,
+        qty: (prev?.qty ?? 0) + line.quantity,
+      });
+    }
+    for (const [productId, { name, qty }] of totals) {
+      const res = await tx.product.updateMany({
+        where: { id: productId, tenantId, quantityOnHand: { gte: qty } },
+        data: { quantityOnHand: { decrement: qty } },
+      });
+      if (res.count === 0) {
+        throw new BadRequestException(`Insufficient stock for ${name}`);
+      }
+    }
   }
 
   /**

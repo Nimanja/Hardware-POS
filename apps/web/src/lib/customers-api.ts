@@ -1,6 +1,5 @@
 import { api } from './api';
 import type { Session } from './auth';
-import { isMockSession } from './sales';
 
 export type CustomerType = 'WALK_IN' | 'RETAIL' | 'CONTRACTOR' | 'CREDIT' | 'DEALER';
 export type CustomerSyncStatus = 'NOT_SYNCED' | 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
@@ -83,9 +82,6 @@ export async function fetchCustomers(
   session: Session,
   query: CustomersQuery = {},
 ): Promise<CustomersPage> {
-  if (isMockSession(session)) {
-    return { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 25 };
-  }
   const res = await api.get<{ items: ApiCustomer[]; total: number; page: number; pageSize: number }>(
     `/customers?${buildQuery(query)}`,
     auth(session),

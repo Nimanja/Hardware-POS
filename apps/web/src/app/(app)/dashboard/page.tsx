@@ -52,8 +52,8 @@ export default function DashboardPage() {
           <CardTitle>Getting started</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          This is the front-end foundation. Screens use a mock session and sample data. Connect the
-          NestJS API and QuickBooks to bring in live products, sales, and sync status.
+          Products, sales, and customers are live from the Hardware POS API. Connect QuickBooks to
+          sync the catalog and push completed sales automatically.
         </CardContent>
       </Card>
     </div>

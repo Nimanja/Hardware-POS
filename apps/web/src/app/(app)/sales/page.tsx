@@ -15,7 +15,6 @@ import { useAuth } from '@/lib/auth';
 import { reprintCustomerReceipt } from '@/lib/receipt-print';
 import {
   fetchSales,
-  isMockSession,
   retrySaleSync,
   type PaymentStatusCode,
   type SaleListItem,
@@ -78,7 +77,6 @@ function PaymentStatusBadge({ status }: { status: PaymentStatusCode }) {
 
 export default function SalesPage() {
   const { session } = useAuth();
-  const mock = session ? isMockSession(session) : true;
 
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -177,13 +175,6 @@ export default function SalesPage() {
           </Link>
         }
       />
-
-      {mock ? (
-        <div className="rounded-xl border border-warning/40 bg-warning-soft/50 p-4 text-sm text-warning">
-          You are signed in with the offline demo. Sign in with a store account (Owner / Cashier) to
-          load saved sales from the server.
-        </div>
-      ) : null}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
