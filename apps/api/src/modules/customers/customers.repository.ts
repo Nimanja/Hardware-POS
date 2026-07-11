@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { Customer, Prisma } from '@hardware-pos/database';
+import { Customer, CustomerType, Prisma } from '@hardware-pos/database';
 
 import { PrismaService } from '../../prisma/prisma.service';
+
+export interface CustomerListFilters {
+  search?: string;
+  customerType?: CustomerType;
+  isActive?: boolean;
+}
 
 @Injectable()
 export class CustomersRepository {
@@ -9,21 +15,24 @@ export class CustomersRepository {
 
   async search(
     tenantId: string,
-    search: string | undefined,
+    filters: CustomerListFilters,
     skip: number,
     take: number,
   ): Promise<[Customer[], number]> {
     const where: Prisma.CustomerWhereInput = {
       tenantId,
-      ...(search
+      ...(filters.search
         ? {
             OR: [
-              { name: { contains: search, mode: 'insensitive' } },
-              { email: { contains: search, mode: 'insensitive' } },
-              { phone: { contains: search, mode: 'insensitive' } },
+              { name: { contains: filters.search, mode: 'insensitive' } },
+              { companyName: { contains: filters.search, mode: 'insensitive' } },
+              { email: { contains: filters.search, mode: 'insensitive' } },
+              { phone: { contains: filters.search, mode: 'insensitive' } },
             ],
           }
         : {}),
+      ...(filters.customerType ? { customerType: filters.customerType } : {}),
+      ...(filters.isActive !== undefined ? { isActive: filters.isActive } : {}),
     };
 
     return this.prisma.$transaction([
@@ -34,5 +43,31 @@ export class CustomersRepository {
 
   findByIdForTenant(tenantId: string, id: string): Promise<Customer | null> {
     return this.prisma.customer.findFirst({ where: { id, tenantId } });
+  }
+
+  create(tenantId: string, data: Prisma.CustomerUncheckedCreateInput): Promise<Customer> {
+    return this.prisma.customer.create({ data: { ...data, tenantId } });
+  }
+
+  update(id: string, data: Prisma.CustomerUncheckedUpdateInput): Promise<Customer> {
+    return this.prisma.customer.update({ where: { id }, data });
+  }
+
+  /** Queue a locally-created customer for a QuickBooks push (stub until real QBO writes). */
+  async queueQuickBooksSync(tenantId: string, id: string): Promise<Customer> {
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.update({ where: { id }, data: { syncStatus: 'PENDING' } });
+      await tx.syncLog.create({
+        data: {
+          tenantId,
+          entityType: 'CUSTOMER',
+          entityId: id,
+          direction: 'OUTBOUND',
+          status: 'PENDING',
+          message: `Customer "${customer.name}" queued for QuickBooks sync`,
+        },
+      });
+      return customer;
+    });
   }
 }

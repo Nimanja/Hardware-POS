@@ -203,6 +203,14 @@ export function PaymentDialog({
 
         {/* Summary */}
         <div className="space-y-1.5 rounded-xl border border-border p-4 text-sm">
+          <Line label="Subtotal" value={formatMoney(totals.subtotal, currency)} />
+          {totals.totalDiscount > 0 ? (
+            <Line label="Product discount" value={`-${formatMoney(totals.totalDiscount, currency)}`} />
+          ) : null}
+          {totals.orderDiscountAmount > 0 ? (
+            <Line label="Order discount" value={`-${formatMoney(totals.orderDiscountAmount, currency)}`} />
+          ) : null}
+          <Line label="Tax / VAT" value={formatMoney(totals.taxAmount, currency)} />
           <Line label="Total amount" value={formatMoney(total, currency)} />
           <Line label="Paid amount" value={formatMoney(paidAmount, currency)} />
           <Line label="Balance" value={formatMoney(balance, currency)} strong={balance > 0} />

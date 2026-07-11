@@ -1,5 +1,7 @@
 'use client';
 
+import { CURRENCY_CODE, CURRENCY_SYMBOL } from '@hardware-pos/shared';
+
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +20,14 @@ export default function SettingsPage() {
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="currency">Currency</Label>
-            <Input id="currency" defaultValue="USD" disabled />
+            <Input
+              id="currency"
+              defaultValue={`Sri Lankan Rupee (${CURRENCY_CODE})`}
+              disabled
+            />
+            <p className="text-xs text-muted-foreground">
+              All prices and transactions are in {CURRENCY_CODE}, shown as {CURRENCY_SYMBOL}
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="tax">Tax rate (%)</Label>

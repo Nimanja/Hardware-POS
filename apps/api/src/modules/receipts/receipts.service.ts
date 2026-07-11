@@ -172,6 +172,7 @@ export class ReceiptsService {
       })),
       subtotal: Number(sale.subtotal),
       totalDiscount: Number(sale.totalDiscount),
+      orderDiscount: Number(sale.orderDiscountAmount),
       taxAmount: Number(sale.taxAmount),
       total: Number(sale.total),
       paidAmount: Number(sale.paidAmount),

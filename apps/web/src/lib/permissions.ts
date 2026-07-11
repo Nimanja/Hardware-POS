@@ -8,7 +8,9 @@ export const Permission = {
   PAYMENT_CREATE: 'payment:create',
   DISCOUNT_APPROVE: 'discount:approve',
   PRODUCT_READ: 'product:read',
+  PRODUCT_MANAGE: 'product:manage',
   CUSTOMER_READ: 'customer:read',
+  CUSTOMER_MANAGE: 'customer:manage',
   SYNC_READ: 'sync:read',
   QUICKBOOKS_READ: 'quickbooks:read',
   QUICKBOOKS_MANAGE: 'quickbooks:manage',
@@ -30,7 +32,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PAYMENT_CREATE,
     Permission.DISCOUNT_APPROVE,
     Permission.PRODUCT_READ,
+    Permission.PRODUCT_MANAGE,
     Permission.CUSTOMER_READ,
+    Permission.CUSTOMER_MANAGE,
     Permission.REPORT_READ,
   ],
   CASHIER: [
@@ -39,6 +43,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PAYMENT_CREATE,
     Permission.PRODUCT_READ,
     Permission.CUSTOMER_READ,
+    Permission.CUSTOMER_MANAGE,
   ],
   ACCOUNTANT: [
     Permission.SYNC_READ,

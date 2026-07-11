@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Building2, Link2, Link2Off, RefreshCw, ScrollText } from 'lucide-react';
 
+import { CurrencyMismatchWarning } from '@/components/quickbooks/currency-warning';
 import { SyncBadge } from '@/components/quickbooks/sync-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -44,7 +45,11 @@ export default function QuickBooksOverviewPage() {
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field label="Connected company" value={state.company.name} icon />
                 <Field label="Realm ID" value={state.company.realmId} />
+                <Field label="Company currency" value={state.company.currency} />
                 <Field label="Last sync" value={formatQbTime(state.lastSyncISO)} />
+              </div>
+              <div className="mt-4">
+                <CurrencyMismatchWarning currency={state.company.currency} />
               </div>
               <div className="mt-6 flex flex-wrap gap-2">
                 <Button

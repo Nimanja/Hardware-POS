@@ -46,16 +46,29 @@ export function computeLine(item: CartItem): LineTotals {
   };
 }
 
+/** Whole-cart discount, applied after per-line (product) discounts. */
+export interface OrderDiscount {
+  type: DiscountType;
+  value: number;
+  reason?: string;
+}
+
 export interface CartTotals {
   itemCount: number;
   subtotal: number;
+  /** Sum of per-line (product) discounts. */
   totalDiscount: number;
+  orderDiscountAmount: number;
   taxAmount: number;
   total: number;
   hasStockIssue: boolean;
 }
 
-export function computeTotals(items: CartItem[], taxRatePercent: number): CartTotals {
+export function computeTotals(
+  items: CartItem[],
+  taxRatePercent: number,
+  orderDiscount?: OrderDiscount,
+): CartTotals {
   let subtotal = 0;
   let totalDiscount = 0;
   let itemCount = 0;
@@ -71,13 +84,16 @@ export function computeTotals(items: CartItem[], taxRatePercent: number): CartTo
 
   subtotal = round2(subtotal);
   totalDiscount = round2(totalDiscount);
-  const taxable = round2(subtotal - totalDiscount);
+  const discountedSubtotal = round2(subtotal - totalDiscount);
+  const orderDiscountAmount = computeDiscount(discountedSubtotal, orderDiscount);
+  const taxable = round2(discountedSubtotal - orderDiscountAmount);
   const taxAmount = taxRatePercent > 0 ? round2((taxable * taxRatePercent) / 100) : 0;
 
   return {
     itemCount,
     subtotal,
     totalDiscount,
+    orderDiscountAmount,
     taxAmount,
     total: round2(taxable + taxAmount),
     hasStockIssue,

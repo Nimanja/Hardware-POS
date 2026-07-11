@@ -1,5 +1,6 @@
 'use client';
 
+import { DEFAULT_CURRENCY } from '@hardware-pos/shared';
 import * as React from 'react';
 
 import { api } from './api';
@@ -10,11 +11,13 @@ export interface ClientProduct {
   id: string;
   name: string;
   sku: string | null;
+  barcode: string | null;
   categoryName: string;
   unitType: string | null;
   unitPrice: number;
   quantityOnHand: number;
   requiresWarehousePickup: boolean;
+  imageUrl: string | null;
 }
 
 export interface ClientCustomer {
@@ -31,11 +34,13 @@ interface ApiProduct {
   id: string;
   name: string;
   sku: string | null;
+  barcode: string | null;
   categoryId: string | null;
   unitType: string | null;
   unitPrice: string | number;
   quantityOnHand: string | number;
   requiresWarehousePickup: boolean;
+  imageUrl: string | null;
 }
 
 interface ApiCategory {
@@ -43,7 +48,7 @@ interface ApiCategory {
   name: string;
 }
 
-const DEFAULT_SETTINGS: PosSettings = { currency: 'USD', taxRatePercent: 0 };
+const DEFAULT_SETTINGS: PosSettings = { currency: DEFAULT_CURRENCY, taxRatePercent: 0 };
 
 const MOCK_CUSTOMERS: ClientCustomer[] = [
   { id: 'cus_acme', name: 'Acme Builders' },
@@ -69,11 +74,13 @@ function normalizeApi(p: ApiProduct, catNames: Map<string, string>): ClientProdu
     id: p.id,
     name: p.name,
     sku: p.sku,
+    barcode: p.barcode,
     categoryName: (p.categoryId && catNames.get(p.categoryId)) || 'Uncategorized',
     unitType: p.unitType,
     unitPrice: Number(p.unitPrice),
     quantityOnHand: Number(p.quantityOnHand),
     requiresWarehousePickup: p.requiresWarehousePickup,
+    imageUrl: p.imageUrl,
   };
 }
 
@@ -81,11 +88,13 @@ const MOCK_AS_CLIENT: ClientProduct[] = MOCK_PRODUCTS.map((p) => ({
   id: p.id,
   name: p.name,
   sku: p.sku,
+  barcode: null,
   categoryName: p.category,
   unitType: p.unitType,
   unitPrice: p.unitPrice,
   quantityOnHand: p.quantityOnHand,
   requiresWarehousePickup: p.requiresWarehousePickup,
+  imageUrl: null,
 }));
 
 /**

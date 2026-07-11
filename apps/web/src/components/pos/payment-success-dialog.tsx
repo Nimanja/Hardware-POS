@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, Clock, Printer, Plus } from 'lucide-react';
+import { CheckCircle2, Clock, Printer, Plus, ReceiptText } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ export function PaymentSuccessDialog({
   printing,
   onPrintReceipt,
   onNewSale,
+  onViewSale,
 }: {
   open: boolean;
   sale: CompletedSale | null;
@@ -22,6 +23,8 @@ export function PaymentSuccessDialog({
   printing: boolean;
   onPrintReceipt: () => void;
   onNewSale: () => void;
+  /** Navigate to the persisted sale's detail page. Absent for the offline demo. */
+  onViewSale?: () => void;
 }) {
   if (!sale) return null;
 
@@ -53,6 +56,12 @@ export function PaymentSuccessDialog({
             <Printer className="h-4 w-4" />
             {printing ? 'Preparing…' : 'Print customer receipt'}
           </Button>
+          {onViewSale ? (
+            <Button variant="outline" size="lg" onClick={onViewSale}>
+              <ReceiptText className="h-4 w-4" />
+              View sale
+            </Button>
+          ) : null}
           <Button size="lg" onClick={onNewSale}>
             <Plus className="h-4 w-4" />
             New sale

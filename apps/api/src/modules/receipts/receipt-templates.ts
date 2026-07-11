@@ -2,6 +2,7 @@
  * Printable HTML templates. Each returns a complete standalone document with
  * inline print CSS and a screen-only Print button (browser print for v1).
  */
+import { formatCurrency } from '@hardware-pos/shared';
 
 export interface ReceiptLine {
   name: string;
@@ -22,6 +23,7 @@ export interface CustomerReceiptData {
   items: ReceiptLine[];
   subtotal: number;
   totalDiscount: number;
+  orderDiscount: number;
   taxAmount: number;
   total: number;
   paidAmount: number;
@@ -54,8 +56,9 @@ function esc(value: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-function money(amount: number, currency: string): string {
-  return `${esc(currency)} ${amount.toFixed(2)}`;
+function money(amount: number, _currency: string): string {
+  // Receipts always render in LKR (Rs.); the stored currency is kept for context.
+  return esc(formatCurrency(amount));
 }
 
 const PRINT_BUTTON = `<button class="no-print print-btn" onclick="window.print()">Print</button>`;
@@ -112,7 +115,8 @@ export function renderCustomerReceipt(d: CustomerReceiptData): string {
     </table>
     <div class="totals">
       <div class="row"><span>Subtotal</span><span>${money(d.subtotal, d.currency)}</span></div>
-      <div class="row"><span>Discount</span><span>-${money(d.totalDiscount, d.currency)}</span></div>
+      <div class="row"><span>Product discount</span><span>-${money(d.totalDiscount, d.currency)}</span></div>
+      ${d.orderDiscount > 0 ? `<div class="row"><span>Order discount</span><span>-${money(d.orderDiscount, d.currency)}</span></div>` : ''}
       <div class="row"><span>Tax</span><span>${money(d.taxAmount, d.currency)}</span></div>
       <div class="row grand"><span>Total</span><span>${money(d.total, d.currency)}</span></div>
       <div class="row"><span>Paid</span><span>${money(d.paidAmount, d.currency)}</span></div>

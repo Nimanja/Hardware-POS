@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Link2, ShieldCheck } from 'lucide-react';
 
+import { CurrencyMismatchWarning } from '@/components/quickbooks/currency-warning';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,10 +28,12 @@ export default function QuickBooksConnectPage() {
             <div>
               <div className="font-semibold">Connected</div>
               <div className="text-sm text-muted-foreground">
-                {state.company.name} · connected {formatQbTime(state.connectedAtISO)}
+                {state.company.name} · {state.company.currency} · connected{' '}
+                {formatQbTime(state.connectedAtISO)}
               </div>
             </div>
           </div>
+          <CurrencyMismatchWarning currency={state.company.currency} />
           <Button variant="outline" onClick={disconnect} disabled={!canManage}>
             Disconnect
           </Button>

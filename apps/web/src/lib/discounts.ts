@@ -2,6 +2,12 @@ import { api, ApiError } from './api';
 import type { Session } from './auth';
 import type { DiscountType } from './cart';
 
+/**
+ * Sentinel `productId` for order-level (whole-cart) discount approvals. Must match
+ * the API's `ORDER_DISCOUNT_KEY` so the minted token verifies at sale completion.
+ */
+export const ORDER_DISCOUNT_KEY = '__order__';
+
 export interface ApprovalRequest {
   managerPin: string;
   productId: string;

@@ -1,15 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { DollarSign, Package, ReceiptText, RefreshCw } from 'lucide-react';
+import { Package, ReceiptText, RefreshCw, Wallet } from 'lucide-react';
 
 import { PageHeader } from '@/components/page-header';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
+import { formatMoney } from '@/lib/utils';
 
 const STATS = [
-  { label: "Today's Sales", value: 'USD 0.00', icon: DollarSign },
+  { label: "Today's Sales", value: formatMoney(0), icon: Wallet },
   { label: 'Transactions', value: '0', icon: ReceiptText },
   { label: 'Products Cached', value: '10', icon: Package },
   { label: 'Pending Syncs', value: '0', icon: RefreshCw },

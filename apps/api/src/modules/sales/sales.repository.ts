@@ -1,15 +1,32 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Product, Sale, SyncStatus } from '@hardware-pos/database';
+import { Prisma, Product } from '@hardware-pos/database';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncQueueService } from '../sync/queue/sync-queue.service';
-import { ComputedLine, PersistSaleInput } from './sales.types';
+import { ComputedLine, PersistSaleInput, SalesListFilter } from './sales.types';
 
 export type SaleWithRelations = Prisma.SaleGetPayload<{
   include: { items: true; payments: true; customer: true };
 }>;
 
+/** Sale row for the history list: base fields + names, payment methods, item count. */
+export type SaleListRow = Prisma.SaleGetPayload<{
+  include: {
+    customer: { select: { name: true } };
+    cashier: { select: { name: true } };
+    payments: { select: { method: true } };
+    _count: { select: { items: true } };
+  };
+}>;
+
 const saleInclude = { items: true, payments: true, customer: true } as const;
+
+const saleListInclude = {
+  customer: { select: { name: true } },
+  cashier: { select: { name: true } },
+  payments: { select: { method: true } },
+  _count: { select: { items: true } },
+} satisfies Prisma.SaleInclude;
 
 @Injectable()
 export class SalesRepository {
@@ -22,13 +39,39 @@ export class SalesRepository {
 
   async findManyByTenant(
     tenantId: string,
-    syncStatus: SyncStatus | undefined,
+    filter: SalesListFilter,
     skip: number,
     take: number,
-  ): Promise<[Sale[], number]> {
-    const where: Prisma.SaleWhereInput = { tenantId, ...(syncStatus ? { syncStatus } : {}) };
+  ): Promise<[SaleListRow[], number]> {
+    const where: Prisma.SaleWhereInput = {
+      tenantId,
+      ...(filter.syncStatus ? { syncStatus: filter.syncStatus } : {}),
+      ...(filter.paymentStatus ? { paymentStatus: filter.paymentStatus } : {}),
+      ...(filter.dateFrom || filter.dateTo
+        ? {
+            createdAt: {
+              ...(filter.dateFrom ? { gte: filter.dateFrom } : {}),
+              ...(filter.dateTo ? { lte: filter.dateTo } : {}),
+            },
+          }
+        : {}),
+      ...(filter.search
+        ? {
+            OR: [
+              { saleNumber: { contains: filter.search, mode: 'insensitive' } },
+              { customer: { is: { name: { contains: filter.search, mode: 'insensitive' } } } },
+            ],
+          }
+        : {}),
+    };
     return this.prisma.$transaction([
-      this.prisma.sale.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take }),
+      this.prisma.sale.findMany({
+        where,
+        include: saleListInclude,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
       this.prisma.sale.count({ where }),
     ]);
   }
@@ -89,6 +132,11 @@ export class SalesRepository {
         status: 'DRAFT',
         subtotal: input.computed.subtotal,
         totalDiscount: input.computed.totalDiscount,
+        orderDiscountType: input.computed.orderDiscountType,
+        orderDiscountValue: input.computed.orderDiscountValue,
+        orderDiscountAmount: input.computed.orderDiscountAmount,
+        orderDiscountReason: input.computed.orderDiscountReason,
+        orderDiscountApprovedById: input.computed.orderDiscountApprovedById,
         taxAmount: input.computed.taxAmount,
         total: input.computed.total,
         paidAmount: 0,
@@ -118,6 +166,7 @@ export class SalesRepository {
           completedAt: new Date(),
           subtotal: input.computed.subtotal,
           totalDiscount: input.computed.totalDiscount,
+          ...orderDiscountData(input.computed),
           taxAmount: input.computed.taxAmount,
           total: input.computed.total,
           paidAmount: input.paidAmount,
@@ -159,6 +208,7 @@ export class SalesRepository {
           customerId: input.customerId ?? null,
           subtotal: input.computed.subtotal,
           totalDiscount: input.computed.totalDiscount,
+          ...orderDiscountData(input.computed),
           taxAmount: input.computed.taxAmount,
           total: input.computed.total,
           paidAmount: input.paidAmount,
@@ -238,6 +288,17 @@ export class SalesRepository {
     const count = await client.sale.count({ where: { tenantId } });
     return `S-${String(count + 1).padStart(6, '0')}`;
   }
+}
+
+/** Order-level discount columns shared by the completed-sale writers. */
+function orderDiscountData(computed: PersistSaleInput['computed']) {
+  return {
+    orderDiscountType: computed.orderDiscountType,
+    orderDiscountValue: computed.orderDiscountValue,
+    orderDiscountAmount: computed.orderDiscountAmount,
+    orderDiscountReason: computed.orderDiscountReason,
+    orderDiscountApprovedById: computed.orderDiscountApprovedById,
+  };
 }
 
 function toSaleItemCreate(line: ComputedLine): Prisma.SaleItemCreateWithoutSaleInput {

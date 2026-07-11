@@ -10,6 +10,8 @@ export interface QbCompany {
   name: string;
   realmId: string;
   environment: string;
+  /** ISO currency code configured on the connected QuickBooks company. */
+  currency: string;
 }
 
 export interface QbProduct {
@@ -69,7 +71,12 @@ const SEED_LOG: QbLogEntry[] = [
 /** Default (seeded connected) state — deterministic so SSR and first client render match. */
 const CONNECTED_STATE: QbState = {
   connected: true,
-  company: { name: 'Hardware Store Demo Co.', realmId: '9341452786538291', environment: 'Sandbox' },
+  company: {
+    name: 'Hardware Store Demo Co.',
+    realmId: '9341452786538291',
+    environment: 'Sandbox',
+    currency: 'LKR',
+  },
   connectedAtISO: '2026-07-09T08:15:00Z',
   lastSyncISO: '2026-07-09T09:42:00Z',
   productSync: { status: 'SYNCED', count: 10, lastSyncISO: '2026-07-09T09:42:00Z' },

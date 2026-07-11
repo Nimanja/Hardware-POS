@@ -17,6 +17,14 @@ export interface ProductSearchFilters {
   isActive?: boolean;
 }
 
+export interface ProductListFilters {
+  search?: string;
+  categoryId?: string;
+  isActive?: boolean;
+  syncStatus?: Prisma.ProductWhereInput['syncStatus'];
+  stockStatus?: 'IN' | 'OUT';
+}
+
 export interface MockSyncSummary {
   created: number;
   updated: number;
@@ -84,6 +92,66 @@ export class ProductsRepository {
     return this.prisma.product.findFirst({ where: { tenantId, barcode } });
   }
 
+  /** Management list: search + category / active / sync / stock filters. */
+  async listManaged(
+    tenantId: string,
+    filters: ProductListFilters,
+    skip: number,
+    take: number,
+  ): Promise<[Product[], number]> {
+    const where: Prisma.ProductWhereInput = {
+      tenantId,
+      ...(filters.search
+        ? {
+            OR: [
+              { name: { contains: filters.search, mode: 'insensitive' } },
+              { sku: { contains: filters.search, mode: 'insensitive' } },
+              { barcode: { contains: filters.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+      ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
+      ...(filters.isActive !== undefined ? { isActive: filters.isActive } : {}),
+      ...(filters.syncStatus ? { syncStatus: filters.syncStatus } : {}),
+      ...(filters.stockStatus === 'OUT'
+        ? { quantityOnHand: { lte: 0 } }
+        : filters.stockStatus === 'IN'
+          ? { quantityOnHand: { gt: 0 } }
+          : {}),
+    };
+
+    return this.prisma.$transaction([
+      this.prisma.product.findMany({ where, orderBy: { name: 'asc' }, skip, take }),
+      this.prisma.product.count({ where }),
+    ]);
+  }
+
+  create(tenantId: string, data: Prisma.ProductUncheckedCreateInput): Promise<Product> {
+    return this.prisma.product.create({ data: { ...data, tenantId } });
+  }
+
+  update(id: string, data: Prisma.ProductUncheckedUpdateInput): Promise<Product> {
+    return this.prisma.product.update({ where: { id }, data });
+  }
+
+  /** Queue a locally-created product for a QuickBooks push (stub until real QBO writes). */
+  async queueQuickBooksSync(tenantId: string, id: string): Promise<Product> {
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.update({ where: { id }, data: { syncStatus: 'PENDING' } });
+      await tx.syncLog.create({
+        data: {
+          tenantId,
+          entityType: 'PRODUCT',
+          entityId: id,
+          direction: 'OUTBOUND',
+          status: 'PENDING',
+          message: `Product "${product.name}" queued for QuickBooks sync`,
+        },
+      });
+      return product;
+    });
+  }
+
   /**
    * Simulate a QuickBooks catalog pull: upsert the mock hardware products and
    * their categories, marking each SYNCED. This is the ONLY write path for the
@@ -133,7 +201,8 @@ export class ProductsRepository {
           create: { tenantId, quickbooksItemId: p.quickbooksItemId, ...data },
         });
 
-        existing ? updated++ : created++;
+        if (existing) updated++;
+        else created++;
       }
 
       await tx.syncLog.create({

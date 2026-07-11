@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { RefreshCw } from 'lucide-react';
 
+import { CurrencyMismatchWarning } from '@/components/quickbooks/currency-warning';
 import { SyncBadge } from '@/components/quickbooks/sync-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -47,10 +48,11 @@ export default function QuickBooksProductsPage() {
 
   return (
     <div className="space-y-4">
+      <CurrencyMismatchWarning currency={state.company?.currency} />
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {state.products.length} products cached from QuickBooks · last pull{' '}
-          {formatQbTime(state.productSync.lastSyncISO)}
+          {state.products.length} products cached from QuickBooks · {state.company?.currency} · last
+          pull {formatQbTime(state.productSync.lastSyncISO)}
         </p>
         <Button onClick={handleSync} disabled={!canManage || syncing}>
           <RefreshCw className={cn('h-4 w-4', syncing && 'animate-spin')} />
