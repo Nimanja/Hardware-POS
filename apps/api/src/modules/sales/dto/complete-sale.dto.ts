@@ -1,9 +1,13 @@
+import { DiscountType } from '@hardware-pos/database';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
+  Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -44,4 +48,24 @@ export class CompleteSaleDto {
   @ValidateNested({ each: true })
   @Type(() => SalePaymentInputDto)
   payments!: SalePaymentInputDto[];
+
+  // ── Order-level (whole-cart) discount ──────────────────────────────────────
+
+  @IsEnum(DiscountType)
+  @IsOptional()
+  orderDiscountType?: DiscountType;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  orderDiscountValue?: number;
+
+  @IsString()
+  @IsOptional()
+  orderDiscountReason?: string;
+
+  /** Approval token from POST /discounts/approve for an over-limit order discount. */
+  @IsString()
+  @IsOptional()
+  orderApprovalToken?: string;
 }

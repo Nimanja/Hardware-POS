@@ -104,5 +104,5 @@ The POS is authoritative for:
 
 - Returns / exchanges / refunds (planned as a later phase).
 - Editing products, prices, or stock from the POS.
-- Multi-currency (QBO company currency is assumed).
+- Multi-currency and automatic currency conversion. The POS operates entirely in LKR (Sri Lankan Rupees); the connected QBO company currency is expected to be LKR and a warning is shown if it is not.
 - Purchase orders and supplier management (handled in QBO).

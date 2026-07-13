@@ -1,20 +1,22 @@
 'use client';
 
+import { DEFAULT_CURRENCY } from '@hardware-pos/shared';
 import * as React from 'react';
 
 import { api } from './api';
 import type { Session } from './auth';
-import { MOCK_PRODUCTS } from './mock-data';
 
 export interface ClientProduct {
   id: string;
   name: string;
   sku: string | null;
+  barcode: string | null;
   categoryName: string;
   unitType: string | null;
   unitPrice: number;
   quantityOnHand: number;
   requiresWarehousePickup: boolean;
+  imageUrl: string | null;
 }
 
 export interface ClientCustomer {
@@ -31,11 +33,13 @@ interface ApiProduct {
   id: string;
   name: string;
   sku: string | null;
+  barcode: string | null;
   categoryId: string | null;
   unitType: string | null;
   unitPrice: string | number;
   quantityOnHand: string | number;
   requiresWarehousePickup: boolean;
+  imageUrl: string | null;
 }
 
 interface ApiCategory {
@@ -43,21 +47,18 @@ interface ApiCategory {
   name: string;
 }
 
-const DEFAULT_SETTINGS: PosSettings = { currency: 'USD', taxRatePercent: 0 };
-
-const MOCK_CUSTOMERS: ClientCustomer[] = [
-  { id: 'cus_acme', name: 'Acme Builders' },
-  { id: 'cus_north', name: 'Northside Contractors' },
-];
+const DEFAULT_SETTINGS: PosSettings = { currency: DEFAULT_CURRENCY, taxRatePercent: 0 };
 
 export interface CheckoutData {
   loading: boolean;
-  /** 'api' when live data loaded, 'mock' when the offline fallback is used. */
-  source: 'api' | 'mock';
+  /** Non-null when the catalog failed to load from the API. */
+  error: string | null;
   products: ClientProduct[];
   categories: string[];
   customers: ClientCustomer[];
   settings: PosSettings;
+  /** Re-fetch the catalog (e.g. after the API comes back up). */
+  reload: () => void;
 }
 
 function deriveCategories(products: ClientProduct[]): string[] {
@@ -69,34 +70,24 @@ function normalizeApi(p: ApiProduct, catNames: Map<string, string>): ClientProdu
     id: p.id,
     name: p.name,
     sku: p.sku,
+    barcode: p.barcode,
     categoryName: (p.categoryId && catNames.get(p.categoryId)) || 'Uncategorized',
     unitType: p.unitType,
     unitPrice: Number(p.unitPrice),
     quantityOnHand: Number(p.quantityOnHand),
     requiresWarehousePickup: p.requiresWarehousePickup,
+    imageUrl: p.imageUrl,
   };
 }
 
-const MOCK_AS_CLIENT: ClientProduct[] = MOCK_PRODUCTS.map((p) => ({
-  id: p.id,
-  name: p.name,
-  sku: p.sku,
-  categoryName: p.category,
-  unitType: p.unitType,
-  unitPrice: p.unitPrice,
-  quantityOnHand: p.quantityOnHand,
-  requiresWarehousePickup: p.requiresWarehousePickup,
-}));
-
-/**
- * Loads catalog data for the checkout screen from the backend product API,
- * falling back to bundled mock data when the API is unreachable/unauthenticated
- * (e.g. the offline demo session).
- */
+/** Loads catalog data for the checkout screen from the backend product API. */
 export function useCheckoutData(session: Session): CheckoutData {
-  const [data, setData] = React.useState<CheckoutData>({
+  const [refreshKey, setRefreshKey] = React.useState(0);
+  const reload = React.useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const [data, setData] = React.useState<Omit<CheckoutData, 'reload'>>({
     loading: true,
-    source: 'api',
+    error: null,
     products: [],
     categories: [],
     customers: [],
@@ -109,6 +100,7 @@ export function useCheckoutData(session: Session): CheckoutData {
   React.useEffect(() => {
     let cancelled = false;
     const auth = { token, tenantId };
+    setData((prev) => ({ ...prev, loading: true, error: null }));
 
     (async () => {
       try {
@@ -123,20 +115,20 @@ export function useCheckoutData(session: Session): CheckoutData {
         const products = prod.items.map((p) => normalizeApi(p, catNames));
         setData({
           loading: false,
-          source: 'api',
+          error: null,
           products,
           categories: deriveCategories(products),
           customers: custs.items,
           settings,
         });
-      } catch {
+      } catch (err) {
         if (cancelled) return;
         setData({
           loading: false,
-          source: 'mock',
-          products: MOCK_AS_CLIENT,
-          categories: deriveCategories(MOCK_AS_CLIENT),
-          customers: MOCK_CUSTOMERS,
+          error: err instanceof Error ? err.message : 'Failed to load the product catalog',
+          products: [],
+          categories: [],
+          customers: [],
           settings: DEFAULT_SETTINGS,
         });
       }
@@ -145,7 +137,7 @@ export function useCheckoutData(session: Session): CheckoutData {
     return () => {
       cancelled = true;
     };
-  }, [token, tenantId]);
+  }, [token, tenantId, refreshKey]);
 
-  return data;
+  return React.useMemo(() => ({ ...data, reload }), [data, reload]);
 }

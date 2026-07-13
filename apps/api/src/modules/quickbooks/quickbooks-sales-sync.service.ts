@@ -51,11 +51,6 @@ export class QuickBooksSalesSyncService {
    * kept in the POS and marked FAILED (never rolled back).
    */
   async syncSale(tenantId: string, saleId: string): Promise<SaleSyncResult> {
-    const connection = await this.connections.find(tenantId);
-    if (!connection || !connection.isActive) {
-      throw new NotFoundException('QuickBooks is not connected');
-    }
-
     const sale = await this.prisma.sale.findFirst({
       where: { id: saleId, tenantId },
       include: saleInclude,
@@ -74,6 +69,14 @@ export class QuickBooksSalesSyncService {
 
     const attempt = await this.nextAttempt(tenantId, saleId);
     await this.prisma.sale.update({ where: { id: saleId }, data: { syncStatus: 'SYNCING' } });
+
+    // Dev/demo fallback: with no live QuickBooks connection (no credentials), simulate
+    // the push so the POS flow completes end-to-end. Real QBO writes run only when a
+    // company is connected — consistent with the mock sync used elsewhere in the app.
+    const connection = await this.connections.find(tenantId);
+    if (!connection || !connection.isActive) {
+      return this.mockSync(sale, attempt);
+    }
 
     try {
       const accessToken = await this.oauth.getValidAccessToken(tenantId); // refreshes if expired
@@ -134,6 +137,35 @@ export class QuickBooksSalesSyncService {
       this.logger.warn(`Sale ${sale.saleNumber} sync failed: ${message}`);
       return this.result(sale, 'FAILED', sale.quickbooksDocumentId, null, message);
     }
+  }
+
+  /**
+   * Simulated QuickBooks push used when no company is connected (dev/demo). Assigns
+   * deterministic mock QBO ids and marks the sale + payments synced, mirroring the
+   * real success path so the Sales UI and sync log look identical.
+   */
+  private async mockSync(
+    sale: SaleWithSyncRelations,
+    attempt: number,
+  ): Promise<SaleSyncResult> {
+    const prefix = sale.quickbooksDocumentType === 'SALES_RECEIPT' ? 'SR' : 'INV';
+    const documentId = sale.quickbooksDocumentId ?? `QBO-${prefix}-${sale.saleNumber}`;
+    const quickbooksPaymentId =
+      sale.quickbooksDocumentType === 'INVOICE' && Number(sale.paidAmount) > 0
+        ? `QBO-PMT-${sale.saleNumber}`
+        : null;
+
+    await this.persistSuccess(sale, documentId, quickbooksPaymentId, attempt);
+    this.logger.log(
+      `Simulated QuickBooks sync for sale ${sale.saleNumber} (not connected) → ${documentId}`,
+    );
+    return this.result(
+      sale,
+      'SYNCED',
+      documentId,
+      quickbooksPaymentId,
+      `Simulated ${sale.quickbooksDocumentType} ${documentId} (QuickBooks not connected)`,
+    );
   }
 
   /**

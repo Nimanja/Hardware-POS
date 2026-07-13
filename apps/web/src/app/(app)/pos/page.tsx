@@ -1,8 +1,10 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import {
   AlertTriangle,
+  ArrowRight,
   Minus,
   NotebookPen,
   Plus,
@@ -10,145 +12,110 @@ import {
   ShieldCheck,
   Tag,
   Trash2,
+  UserPlus,
   Warehouse,
 } from 'lucide-react';
 
 import { ItemDiscountDialog } from '@/components/pos/item-discount-dialog';
 import { ItemNoteDialog } from '@/components/pos/item-note-dialog';
 import { ManagerApprovalDialog } from '@/components/pos/manager-approval-dialog';
-import { PaymentDialog, type PaymentSubmission } from '@/components/pos/payment-dialog';
-import { PaymentSuccessDialog } from '@/components/pos/payment-success-dialog';
-import { Badge } from '@/components/ui/badge';
+import { OrderDiscountDialog } from '@/components/pos/order-discount-dialog';
+import { QuickAddCustomerDialog } from '@/components/pos/quick-add-customer-dialog';
+import { ProductImage } from '@/components/product-image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
-import { useCheckoutData } from '@/lib/catalog';
-import {
-  computeLine,
-  computeTotals,
-  newCartItem,
-  type CartItem,
-  type LineDiscount,
-} from '@/lib/cart';
-import type { ClientProduct } from '@/lib/catalog';
-import { requestDiscountApproval } from '@/lib/discounts';
-import { discountLimitFor, withinDiscountLimit } from '@/lib/permissions';
-import { printCustomerReceipt, type ReceiptContext } from '@/lib/receipt-print';
-import {
-  completeSale,
-  DEV_BRANCH_ID,
-  DEV_REGISTER_ID,
-  type CompletedSale,
-  type CompleteSaleDto,
-} from '@/lib/sales';
-import { cn, formatMoney } from '@/lib/utils';
+import { computeLine, computeTotals, type LineDiscount, type OrderDiscount } from '@/lib/cart';
+import { useCheckoutData, type ClientProduct } from '@/lib/catalog';
+import { ORDER_DISCOUNT_KEY, requestDiscountApproval } from '@/lib/discounts';
+import { Permission, discountLimitFor, withinDiscountLimit } from '@/lib/permissions';
+import { usePosCart } from '@/lib/pos-cart';
+import { cn, formatMoney, round2 } from '@/lib/utils';
 
-interface PendingApproval {
+const PAGE_SIZES = [20, 30, 40, 50];
+
+interface PendingLineApproval {
   productId: string;
   discount: LineDiscount;
   percent: number;
 }
 
 export default function PosPage() {
-  const { session } = useAuth();
+  const { session, hasPermission } = useAuth();
+  const router = useRouter();
   const data = useCheckoutData(session!);
+  const cart = usePosCart();
+  const canAddCustomer = hasPermission(Permission.CUSTOMER_MANAGE);
 
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('All');
-  const [cart, setCart] = React.useState<CartItem[]>([]);
-  const [customerId, setCustomerId] = React.useState('');
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(20);
   const [noteFor, setNoteFor] = React.useState<string | null>(null);
   const [discountFor, setDiscountFor] = React.useState<string | null>(null);
-  const [pendingApproval, setPendingApproval] = React.useState<PendingApproval | null>(null);
-  const [paymentOpen, setPaymentOpen] = React.useState(false);
-  const [submitting, setSubmitting] = React.useState(false);
-  const [submitError, setSubmitError] = React.useState<string | null>(null);
-  const [completedSale, setCompletedSale] = React.useState<CompletedSale | null>(null);
-  const [receiptCtx, setReceiptCtx] = React.useState<ReceiptContext | null>(null);
-  const [printing, setPrinting] = React.useState(false);
+  const [pendingApproval, setPendingApproval] = React.useState<PendingLineApproval | null>(null);
+  const [orderDiscountOpen, setOrderDiscountOpen] = React.useState(false);
+  const [pendingOrderApproval, setPendingOrderApproval] = React.useState<{
+    discount: OrderDiscount;
+    percent: number;
+  } | null>(null);
+  const [quickAddOpen, setQuickAddOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
-    window.setTimeout(() => setToast(null), 2600);
+    window.setTimeout(() => setToast(null), 2400);
   };
 
-  // ── catalog filtering ──────────────────────────────────────────────────────
+  // ── catalog filtering + pagination ─────────────────────────────────────────
   const categories = ['All', ...data.categories];
   const q = query.trim().toLowerCase();
-  const products = data.products.filter((p) => {
-    const matchesCat = category === 'All' || p.categoryName === category;
-    const matchesQuery =
-      !q || p.name.toLowerCase().includes(q) || (p.sku ?? '').toLowerCase().includes(q);
-    return matchesCat && matchesQuery;
-  });
+  const filtered = React.useMemo(
+    () =>
+      data.products.filter((p) => {
+        const matchesCat = category === 'All' || p.categoryName === category;
+        const matchesQuery =
+          !q ||
+          p.name.toLowerCase().includes(q) ||
+          (p.sku ?? '').toLowerCase().includes(q) ||
+          (p.barcode ?? '').toLowerCase().includes(q);
+        return matchesCat && matchesQuery;
+      }),
+    [data.products, category, q],
+  );
 
-  // ── cart operations ────────────────────────────────────────────────────────
-  const updateItem = (productId: string, fn: (item: CartItem) => CartItem) =>
-    setCart((prev) => prev.map((it) => (it.product.id === productId ? fn(it) : it)));
+  React.useEffect(() => setPage(1), [q, category, pageSize]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageProducts = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const addToCart = (product: ClientProduct) =>
-    setCart((prev) => {
-      const found = prev.find((it) => it.product.id === product.id);
-      if (found) {
-        return prev.map((it) =>
-          it.product.id === product.id ? { ...it, quantity: it.quantity + 1 } : it,
-        );
-      }
-      return [...prev, newCartItem(product)];
-    });
+  const addToCart = (product: ClientProduct) => {
+    cart.addToCart(product);
+    showToast(`${product.name} added`);
+  };
 
-  const changeQty = (productId: string, delta: number) =>
-    setCart((prev) =>
-      prev
-        .map((it) => (it.product.id === productId ? { ...it, quantity: it.quantity + delta } : it))
-        .filter((it) => it.quantity > 0),
+  // Barcode/scanner: Enter adds an exact barcode/SKU match, else the sole result.
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    const exact = filtered.find(
+      (p) => (p.barcode ?? '').toLowerCase() === q || (p.sku ?? '').toLowerCase() === q,
     );
-
-  const removeItem = (productId: string) =>
-    setCart((prev) => prev.filter((it) => it.product.id !== productId));
-
-  const setNote = (productId: string, note: string) => {
-    updateItem(productId, (it) => ({ ...it, note: note || undefined }));
-    setNoteFor(null);
+    const target = exact ?? (filtered.length === 1 ? filtered[0] : undefined);
+    if (target) {
+      addToCart(target);
+      setQuery('');
+    }
   };
 
-  const applyDirectDiscount = (productId: string, discount: LineDiscount) =>
-    updateItem(productId, (it) => ({
-      ...it,
-      discount,
-      approvalToken: undefined,
-      approvedByUserId: undefined,
-    }));
-
-  const applyApprovedDiscount = (
-    productId: string,
-    discount: LineDiscount,
-    token: string,
-    approvedByUserId?: string,
-  ) => updateItem(productId, (it) => ({ ...it, discount, approvalToken: token, approvedByUserId }));
-
-  const clearDiscount = (productId: string) => {
-    updateItem(productId, (it) => ({
-      ...it,
-      discount: undefined,
-      approvalToken: undefined,
-      approvedByUserId: undefined,
-    }));
-    setDiscountFor(null);
-  };
-
-  /** Apply within the acting user's limit, or route to manager approval. */
-  const handleDiscountApply = (productId: string, discount: LineDiscount) => {
-    const item = cart.find((it) => it.product.id === productId);
+  // ── discounts ──────────────────────────────────────────────────────────────
+  const handleLineDiscountApply = (productId: string, discount: LineDiscount) => {
+    const item = cart.items.find((it) => it.product.id === productId);
     if (!item) return;
     const line = computeLine({ ...item, discount });
     const percent = line.lineSubtotal > 0 ? (line.discountAmount / line.lineSubtotal) * 100 : 0;
-
     if (withinDiscountLimit(discountLimitFor(session!.user.role), percent)) {
-      applyDirectDiscount(productId, discount);
+      cart.setLineDiscount(productId, discount);
       setDiscountFor(null);
     } else {
       setPendingApproval({ productId, discount, percent });
@@ -156,7 +123,7 @@ export default function PosPage() {
     }
   };
 
-  const handleApprove = async (managerPin: string, note: string): Promise<string | null> => {
+  const handleApproveLine = async (managerPin: string, note: string): Promise<string | null> => {
     if (!pendingApproval) return 'No pending discount';
     const { productId, discount } = pendingApproval;
     const res = await requestDiscountApproval(session!, {
@@ -167,7 +134,7 @@ export default function PosPage() {
       reason: note || discount.reason,
     });
     if (res.approved && res.approvalToken) {
-      applyApprovedDiscount(
+      cart.setLineDiscount(
         productId,
         { ...discount, reason: note || discount.reason },
         res.approvalToken,
@@ -180,93 +147,82 @@ export default function PosPage() {
     return res.reason ?? 'Not approved';
   };
 
-  const totals = computeTotals(cart, data.settings.taxRatePercent);
-  const { currency } = data.settings;
+  const totals = computeTotals(cart.items, data.settings.taxRatePercent, cart.orderDiscount);
+  const orderBase = round2(totals.subtotal - totals.totalDiscount);
 
-  const noteItem = cart.find((it) => it.product.id === noteFor);
-  const discountItem = cart.find((it) => it.product.id === discountFor);
-  const approvalItem = cart.find((it) => it.product.id === pendingApproval?.productId);
-  const customerName =
-    data.customers.find((c) => c.id === customerId)?.name ?? 'Walk-in customer';
-
-  const handlePaymentSubmit = async (sub: PaymentSubmission) => {
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      const dto: CompleteSaleDto = {
-        branchId: DEV_BRANCH_ID,
-        registerId: DEV_REGISTER_ID,
-        customerId: customerId || undefined,
-        items: cart.map((it) => ({
-          productId: it.product.id,
-          quantity: it.quantity,
-          discountType: it.discount?.type,
-          discountValue: it.discount?.value,
-          discountReason: it.discount?.reason,
-          approvalToken: it.approvalToken,
-        })),
-        payments:
-          sub.method && sub.amount > 0
-            ? [{ method: sub.method, amount: sub.amount, reference: sub.reference }]
-            : [],
-      };
-
-      const sale = await completeSale(session!, dto, { total: totals.total });
-
-      // Snapshot the cart for the receipt before clearing it.
-      setReceiptCtx({
-        currency,
-        customerName,
-        items: cart,
-        subtotal: totals.subtotal,
-        totalDiscount: totals.totalDiscount,
-        taxAmount: totals.taxAmount,
-        storeName: 'Hardware POS',
-      });
-      setCompletedSale(sale);
-      setPaymentOpen(false);
-      setCart([]);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Could not complete the sale');
-    } finally {
-      setSubmitting(false);
+  const handleOrderDiscountApply = (discount: OrderDiscount) => {
+    const amount =
+      discount.type === 'PERCENTAGE'
+        ? round2((orderBase * discount.value) / 100)
+        : Math.min(orderBase, round2(discount.value));
+    const percent = orderBase > 0 ? (amount / orderBase) * 100 : 0;
+    if (withinDiscountLimit(discountLimitFor(session!.user.role), percent)) {
+      cart.setOrderDiscount(discount);
+      setOrderDiscountOpen(false);
+    } else {
+      setPendingOrderApproval({ discount, percent });
+      setOrderDiscountOpen(false);
     }
   };
 
-  const handlePrintReceipt = async () => {
-    if (!completedSale || !receiptCtx) return;
-    setPrinting(true);
-    try {
-      await printCustomerReceipt(session!, completedSale, receiptCtx);
-    } finally {
-      setPrinting(false);
+  const handleApproveOrder = async (managerPin: string, note: string): Promise<string | null> => {
+    if (!pendingOrderApproval) return 'No pending discount';
+    const { discount } = pendingOrderApproval;
+    const res = await requestDiscountApproval(session!, {
+      managerPin,
+      productId: ORDER_DISCOUNT_KEY,
+      discountType: discount.type,
+      discountValue: discount.value,
+      reason: note || discount.reason,
+    });
+    if (res.approved && res.approvalToken) {
+      cart.setOrderDiscount({ ...discount, reason: note || discount.reason }, res.approvalToken);
+      setPendingOrderApproval(null);
+      showToast('Order discount approved by manager');
+      return null;
     }
+    return res.reason ?? 'Not approved';
   };
 
-  const handleNewSale = () => {
-    setCompletedSale(null);
-    setReceiptCtx(null);
-    setCustomerId('');
-  };
+  const allCustomers = React.useMemo(
+    () => [...cart.addedCustomers, ...data.customers],
+    [cart.addedCustomers, data.customers],
+  );
+
+  const noteItem = cart.items.find((it) => it.product.id === noteFor);
+  const discountItem = cart.items.find((it) => it.product.id === discountFor);
+  const approvalItem = cart.items.find((it) => it.product.id === pendingApproval?.productId);
+
+  const currency = data.settings.currency;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+    <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
       {/* ── Catalog ─────────────────────────────────────────────── */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onSearchKeyDown}
               placeholder="Search products or scan barcode…"
               className="pl-10"
             />
           </div>
-          <Badge variant={data.source === 'api' ? 'success' : 'neutral'}>
-            {data.source === 'api' ? 'Live data' : 'Demo data'}
-          </Badge>
         </div>
+
+        {data.error ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger">
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Couldn&apos;t load the product catalog: {data.error}
+            </span>
+            <Button variant="outline" size="sm" onClick={data.reload}>
+              Retry
+            </Button>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-2">
           {categories.map((c) => (
@@ -288,74 +244,171 @@ export default function PosPage() {
         {data.loading ? (
           <p className="py-16 text-center text-sm text-muted-foreground">Loading products…</p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-            {products.map((p) => {
-              const outOfStock = p.quantityOnHand <= 0;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => addToCart(p)}
-                  className="flex flex-col rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:border-primary hover:shadow"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs text-muted-foreground">{p.sku}</span>
-                    {p.requiresWarehousePickup ? (
-                      <Warehouse className="h-4 w-4 text-warning" aria-label="Warehouse pickup" />
-                    ) : null}
-                  </div>
-                  <div className="mt-1 line-clamp-2 min-h-10 text-sm font-medium">{p.name}</div>
-                  <div className="mt-3 flex items-end justify-between">
-                    <span className="text-base font-semibold text-primary">
-                      {formatMoney(p.unitPrice, currency)}
-                    </span>
-                    <span
-                      className={cn(
-                        'text-xs',
-                        outOfStock ? 'font-medium text-danger' : 'text-muted-foreground',
-                      )}
-                    >
-                      {outOfStock ? 'Out of stock' : `${p.quantityOnHand} on hand`}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-            {products.length === 0 ? (
-              <p className="col-span-full py-16 text-center text-sm text-muted-foreground">
-                No products match your search.
-              </p>
+          <>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {pageProducts.map((p) => {
+                const outOfStock = p.quantityOnHand <= 0;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => addToCart(p)}
+                    disabled={outOfStock}
+                    className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:border-primary hover:shadow disabled:opacity-60"
+                  >
+                    <div className="relative">
+                      <ProductImage
+                        src={p.imageUrl}
+                        alt={p.name}
+                        rounded="rounded-none"
+                        className="aspect-square w-full border-0"
+                      />
+                      {p.requiresWarehousePickup ? (
+                        <span className="absolute left-1.5 top-1.5 rounded-md bg-warning-soft/90 p-1 text-warning">
+                          <Warehouse className="h-3.5 w-3.5" />
+                        </span>
+                      ) : null}
+                      <span className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground opacity-0 shadow transition-opacity group-hover:opacity-100">
+                        <Plus className="h-4 w-4" />
+                      </span>
+                    </div>
+                    <div className="flex flex-1 flex-col p-2.5">
+                      <div className="line-clamp-2 min-h-8 text-xs font-medium leading-tight">
+                        {p.name}
+                      </div>
+                      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                        {p.sku ?? p.barcode ?? ''}
+                      </div>
+                      <div className="mt-1.5 flex items-end justify-between">
+                        <span className="text-sm font-semibold text-primary">
+                          {formatMoney(p.unitPrice, currency)}
+                        </span>
+                        <span
+                          className={cn(
+                            'text-[11px]',
+                            outOfStock ? 'font-medium text-danger' : 'text-muted-foreground',
+                          )}
+                        >
+                          {outOfStock ? 'Out' : `${p.quantityOnHand}${p.unitType ? ' ' + p.unitType : ''}`}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {filtered.length === 0 ? (
+                <p className="col-span-full py-16 text-center text-sm text-muted-foreground">
+                  No products match your search.
+                </p>
+              ) : null}
+            </div>
+
+            {/* Pagination */}
+            {filtered.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <span>Per page</span>
+                  <Select
+                    value={String(pageSize)}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="w-auto"
+                  >
+                    {PAGE_SIZES.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </Select>
+                  <span className="hidden sm:inline">
+                    Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} of{' '}
+                    {filtered.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Prev
+                  </Button>
+                  <span className="px-2 text-muted-foreground">
+                    {page} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             ) : null}
-          </div>
+          </>
         )}
       </div>
 
       {/* ── Cart ────────────────────────────────────────────────── */}
       <Card className="flex h-fit flex-col lg:sticky lg:top-6">
-        <div className="space-y-3 border-b border-border p-4">
+        <div className="flex items-center justify-between border-b border-border p-4">
           <div className="text-sm font-semibold">
             Cart{totals.itemCount > 0 ? ` · ${totals.itemCount} item${totals.itemCount > 1 ? 's' : ''}` : ''}
           </div>
-          <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-            <option value="">Walk-in customer</option>
-            {data.customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+          {cart.items.length > 0 ? (
+            <button
+              onClick={cart.clearCart}
+              className="text-xs font-medium text-danger hover:underline"
+            >
+              Clear cart
+            </button>
+          ) : null}
         </div>
 
-        <CardContent className="max-h-[46vh] space-y-3 overflow-auto p-4">
-          {cart.length === 0 ? (
+        <div className="space-y-3 border-b border-border p-4">
+          <div className="flex items-center gap-2">
+            <Select
+              value={cart.customerId}
+              onChange={(e) => cart.setCustomerId(e.target.value)}
+              className="flex-1"
+            >
+              <option value="">Walk-in customer</option>
+              {allCustomers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            {canAddCustomer ? (
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Add customer"
+                onClick={() => setQuickAddOpen(true)}
+              >
+                <UserPlus className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <CardContent className="max-h-[42vh] space-y-3 overflow-auto p-4">
+          {cart.items.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               Tap a product to add it to the cart.
             </p>
           ) : (
-            cart.map((item) => {
+            cart.items.map((item) => {
               const line = computeLine(item);
               return (
                 <div key={item.product.id} className="rounded-xl border border-border p-3">
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5">
+                    <ProductImage
+                      src={item.product.imageUrl}
+                      alt={item.product.name}
+                      className="h-10 w-10 shrink-0"
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{item.product.name}</div>
                       <div className="text-xs text-muted-foreground">
@@ -388,13 +441,23 @@ export default function PosPage() {
                     </div>
                   ) : null}
 
-                  <div className="mt-3 flex items-center justify-between">
+                  <div className="mt-2.5 flex items-center justify-between">
                     <div className="flex items-center gap-1">
-                      <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => changeQty(item.product.id, -1)}>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => cart.changeQty(item.product.id, -1)}
+                      >
                         <Minus className="h-3.5 w-3.5" />
                       </Button>
                       <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                      <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => changeQty(item.product.id, 1)}>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => cart.changeQty(item.product.id, 1)}
+                      >
                         <Plus className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -417,7 +480,12 @@ export default function PosPage() {
                       >
                         <Tag className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-danger" onClick={() => removeItem(item.product.id)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-danger"
+                        onClick={() => cart.removeItem(item.product.id)}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -431,7 +499,34 @@ export default function PosPage() {
         <div className="space-y-2 border-t border-border p-4 text-sm">
           <Row label="Subtotal" value={formatMoney(totals.subtotal, currency)} />
           <Row label="Product discount" value={`-${formatMoney(totals.totalDiscount, currency)}`} />
-          <Row label={`Tax (${data.settings.taxRatePercent}%)`} value={formatMoney(totals.taxAmount, currency)} />
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              disabled={cart.items.length === 0}
+              onClick={() => setOrderDiscountOpen(true)}
+              className={cn(
+                'inline-flex items-center gap-1.5 transition-colors disabled:opacity-50',
+                cart.orderDiscount ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Tag className="h-3.5 w-3.5" />
+              Order discount
+              {cart.orderApprovalToken ? (
+                <ShieldCheck className="h-3.5 w-3.5" aria-label="Manager approved" />
+              ) : null}
+            </button>
+            {cart.orderDiscount ? (
+              <span className="font-medium text-success">
+                -{formatMoney(totals.orderDiscountAmount, currency)}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">Add</span>
+            )}
+          </div>
+          <Row
+            label={`Tax (${data.settings.taxRatePercent}%)`}
+            value={formatMoney(totals.taxAmount, currency)}
+          />
           <div className="flex items-center justify-between border-t border-border pt-2 text-base font-semibold">
             <span>Total</span>
             <span>{formatMoney(totals.total, currency)}</span>
@@ -444,8 +539,14 @@ export default function PosPage() {
             </div>
           ) : null}
 
-          <Button size="lg" className="mt-1 w-full" disabled={cart.length === 0} onClick={() => setPaymentOpen(true)}>
-            Payment · {formatMoney(totals.total, currency)}
+          <Button
+            size="lg"
+            className="mt-1 w-full"
+            disabled={cart.items.length === 0 || totals.hasStockIssue}
+            onClick={() => router.push('/pos/payment')}
+          >
+            Continue to Payment
+            <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
       </Card>
@@ -456,7 +557,10 @@ export default function PosPage() {
           open={!!noteFor}
           productName={noteItem.product.name}
           initialNote={noteItem.note}
-          onSave={(note) => setNote(noteItem.product.id, note)}
+          onSave={(note) => {
+            cart.setNote(noteItem.product.id, note);
+            setNoteFor(null);
+          }}
           onClose={() => setNoteFor(null)}
         />
       ) : null}
@@ -470,8 +574,11 @@ export default function PosPage() {
           currency={currency}
           roleLimit={discountLimitFor(session!.user.role)}
           initial={discountItem.discount}
-          onApply={(d) => handleDiscountApply(discountItem.product.id, d)}
-          onClear={() => clearDiscount(discountItem.product.id)}
+          onApply={(d) => handleLineDiscountApply(discountItem.product.id, d)}
+          onClear={() => {
+            cart.setLineDiscount(discountItem.product.id, undefined);
+            setDiscountFor(null);
+          }}
           onClose={() => setDiscountFor(null)}
         />
       ) : null}
@@ -481,30 +588,47 @@ export default function PosPage() {
           open={!!pendingApproval}
           productName={approvalItem.product.name}
           discountLabel={formatDiscountLabel(pendingApproval.discount, currency)}
-          onApprove={handleApprove}
+          onApprove={handleApproveLine}
           onClose={() => setPendingApproval(null)}
         />
       ) : null}
 
-      <PaymentDialog
-        open={paymentOpen}
-        totals={totals}
+      <OrderDiscountDialog
+        open={orderDiscountOpen}
+        baseAmount={orderBase}
         currency={currency}
-        hasCustomer={!!customerId}
-        submitting={submitting}
-        error={submitError}
-        onClose={() => setPaymentOpen(false)}
-        onSubmit={handlePaymentSubmit}
+        roleLimit={discountLimitFor(session!.user.role)}
+        initial={cart.orderDiscount}
+        onApply={handleOrderDiscountApply}
+        onClear={() => {
+          cart.setOrderDiscount(undefined);
+          setOrderDiscountOpen(false);
+        }}
+        onClose={() => setOrderDiscountOpen(false)}
       />
 
-      <PaymentSuccessDialog
-        open={!!completedSale}
-        sale={completedSale}
-        currency={currency}
-        printing={printing}
-        onPrintReceipt={handlePrintReceipt}
-        onNewSale={handleNewSale}
-      />
+      {pendingOrderApproval ? (
+        <ManagerApprovalDialog
+          open={!!pendingOrderApproval}
+          productName="Order discount"
+          discountLabel={formatDiscountLabel(pendingOrderApproval.discount, currency)}
+          onApprove={handleApproveOrder}
+          onClose={() => setPendingOrderApproval(null)}
+        />
+      ) : null}
+
+      {canAddCustomer ? (
+        <QuickAddCustomerDialog
+          open={quickAddOpen}
+          session={session!}
+          onClose={() => setQuickAddOpen(false)}
+          onCreated={(customer) => {
+            cart.addCustomer({ id: customer.id, name: customer.name });
+            setQuickAddOpen(false);
+            showToast(`Customer "${customer.name}" added`);
+          }}
+        />
+      ) : null}
 
       {toast ? (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-foreground px-4 py-2.5 text-sm text-white shadow-lg">
@@ -524,7 +648,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatDiscountLabel(discount: LineDiscount, currency: string): string {
+function formatDiscountLabel(discount: LineDiscount | OrderDiscount, currency: string): string {
   return discount.type === 'PERCENTAGE'
     ? `${discount.value}% off`
     : `${formatMoney(discount.value, currency)} off`;

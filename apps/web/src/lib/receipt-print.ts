@@ -11,6 +11,7 @@ export interface ReceiptContext {
   items: CartItem[];
   subtotal: number;
   totalDiscount: number;
+  orderDiscount: number;
   taxAmount: number;
   storeName?: string;
 }
@@ -19,7 +20,7 @@ function esc(v: unknown): string {
   return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** Minimal printable receipt used for the demo session (or as a fallback). */
+/** Minimal printable receipt used as a fallback when the server render fails. */
 function clientReceiptHtml(sale: CompletedSale, ctx: ReceiptContext): string {
   const rows = ctx.items
     .map((it) => {
@@ -40,7 +41,8 @@ table{width:100%;border-collapse:collapse;font-size:12px}td{padding:3px 0;vertic
 <table>${rows}</table>
 <div class="tot">
 <div class="row"><span>Subtotal</span><span>${formatMoney(ctx.subtotal, ctx.currency)}</span></div>
-<div class="row"><span>Discount</span><span>-${formatMoney(ctx.totalDiscount, ctx.currency)}</span></div>
+<div class="row"><span>Product discount</span><span>-${formatMoney(ctx.totalDiscount, ctx.currency)}</span></div>
+${ctx.orderDiscount > 0 ? `<div class="row"><span>Order discount</span><span>-${formatMoney(ctx.orderDiscount, ctx.currency)}</span></div>` : ''}
 <div class="row"><span>Tax</span><span>${formatMoney(ctx.taxAmount, ctx.currency)}</span></div>
 <div class="row g"><span>Total</span><span>${formatMoney(sale.total, ctx.currency)}</span></div>
 <div class="row"><span>Paid</span><span>${formatMoney(sale.paidAmount, ctx.currency)}</span></div>
@@ -58,24 +60,32 @@ function openPrintWindow(html: string): void {
   window.setTimeout(() => win.print(), 400);
 }
 
-/** Print the customer receipt: server-rendered for real sales, client-side for demo. */
+/** Print the customer receipt: server-rendered, with a client-side fallback. */
 export async function printCustomerReceipt(
   session: Session,
   sale: CompletedSale,
   ctx: ReceiptContext,
 ): Promise<void> {
-  if (!sale.demo) {
-    try {
-      const res = await api.post<{ printJob: { html: string } }>(
-        `/receipts/${sale.id}/customer`,
-        undefined,
-        { token: session.token, tenantId: session.user.tenantId },
-      );
-      openPrintWindow(res.printJob.html);
-      return;
-    } catch {
-      // fall through to the client-rendered receipt
-    }
+  try {
+    const res = await api.post<{ printJob: { html: string } }>(
+      `/receipts/${sale.id}/customer`,
+      undefined,
+      { token: session.token, tenantId: session.user.tenantId },
+    );
+    openPrintWindow(res.printJob.html);
+    return;
+  } catch {
+    // fall through to the client-rendered receipt
   }
   openPrintWindow(clientReceiptHtml(sale, ctx));
+}
+
+/** Reprint a persisted sale's customer receipt from the Sales section. */
+export async function reprintCustomerReceipt(session: Session, saleId: string): Promise<void> {
+  const res = await api.post<{ printJob: { html: string } }>(
+    `/receipts/${saleId}/customer`,
+    undefined,
+    { token: session.token, tenantId: session.user.tenantId },
+  );
+  openPrintWindow(res.printJob.html);
 }

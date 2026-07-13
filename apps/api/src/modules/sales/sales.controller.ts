@@ -1,5 +1,4 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
-import { Sale } from '@hardware-pos/database';
 import type { Paginated } from '@hardware-pos/shared';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -12,6 +11,7 @@ import { CompleteSaleDto } from './dto/complete-sale.dto';
 import { QuerySalesDto } from './dto/query-sales.dto';
 import { SaleWithRelations } from './sales.repository';
 import { SalesService } from './sales.service';
+import { SaleListItem } from './sales.types';
 
 @Controller('sales')
 export class SalesController {
@@ -40,7 +40,10 @@ export class SalesController {
 
   @Get()
   @RequirePermissions(Permission.SALE_READ)
-  list(@TenantId() tenantId: string, @Query() query: QuerySalesDto): Promise<Paginated<Sale>> {
+  list(
+    @TenantId() tenantId: string,
+    @Query() query: QuerySalesDto,
+  ): Promise<Paginated<SaleListItem>> {
     return this.salesService.list(tenantId, query);
   }
 
@@ -53,6 +56,13 @@ export class SalesController {
   @Post(':id/sync')
   @RequirePermissions(Permission.SALE_CREATE)
   sync(@TenantId() tenantId: string, @Param('id') id: string): Promise<SaleWithRelations> {
+    return this.salesService.syncToQuickBooks(tenantId, id);
+  }
+
+  /** Alias of `/sync` — retry a failed/pending QuickBooks push from the Sales UI. */
+  @Post(':id/retry-sync')
+  @RequirePermissions(Permission.SALE_CREATE)
+  retrySync(@TenantId() tenantId: string, @Param('id') id: string): Promise<SaleWithRelations> {
     return this.salesService.syncToQuickBooks(tenantId, id);
   }
 }

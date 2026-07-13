@@ -2,6 +2,12 @@ import { api, ApiError } from './api';
 import type { Session } from './auth';
 import type { DiscountType } from './cart';
 
+/**
+ * Sentinel `productId` for order-level (whole-cart) discount approvals. Must match
+ * the API's `ORDER_DISCOUNT_KEY` so the minted token verifies at sale completion.
+ */
+export const ORDER_DISCOUNT_KEY = '__order__';
+
 export interface ApprovalRequest {
   managerPin: string;
   productId: string;
@@ -17,28 +23,11 @@ export interface ApprovalResult {
   reason?: string;
 }
 
-/**
- * Request manager approval for an over-limit discount.
- *
- * With a real session this calls POST /discounts/approve. In the offline demo
- * session (mock token) the backend would reject the request, so we simulate the
- * seeded manager PIN (2222) locally to keep the flow demonstrable.
- */
+/** Request manager approval for an over-limit discount via POST /discounts/approve. */
 export async function requestDiscountApproval(
   session: Session,
   input: ApprovalRequest,
 ): Promise<ApprovalResult> {
-  if (session.token.startsWith('mock.')) {
-    if (input.managerPin === '2222') {
-      return {
-        approved: true,
-        approvedByUserId: 'usr_manager',
-        approvalToken: 'demo-approval-token',
-      };
-    }
-    return { approved: false, approvedByUserId: null, approvalToken: null, reason: 'Invalid manager PIN' };
-  }
-
   try {
     return await api.post<ApprovalResult>('/discounts/approve', input, {
       token: session.token,

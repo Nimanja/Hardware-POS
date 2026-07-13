@@ -8,17 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { MOCK_USERS, useAuth } from '@/lib/auth';
-
-const QUICK_LOGINS: { key: keyof typeof MOCK_USERS; label: string; hint: string }[] = [
-  { key: 'owner', label: 'Owner', hint: 'Full access' },
-  { key: 'manager', label: 'Manager', hint: 'Approves discounts' },
-  { key: 'cashier', label: 'Cashier', hint: 'Sells & takes payment' },
-  { key: 'accountant', label: 'Accountant', hint: 'Sync & QuickBooks' },
-];
+import { useAuth } from '@/lib/auth';
 
 export default function LoginPage() {
-  const { isAuthenticated, loginMock, loginWithEmail, loginWithPin } = useAuth();
+  const { isAuthenticated, loginWithEmail, loginWithPin } = useAuth();
   const router = useRouter();
   const [email, setEmail] = React.useState('owner@hardwarepos.test');
   const [password, setPassword] = React.useState('password123');
@@ -40,9 +33,7 @@ export default function LoginPage() {
       go();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? `${err.message} — is the API running? You can use a demo login above.`
-          : 'Login failed',
+        err instanceof Error ? `${err.message} — is the API running?` : 'Login failed',
       );
     } finally {
       setBusy(false);
@@ -62,34 +53,6 @@ export default function LoginPage() {
 
         <Card>
           <CardContent className="space-y-5 p-6">
-            <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Quick demo login
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {QUICK_LOGINS.map((q) => (
-                  <button
-                    key={q.key}
-                    type="button"
-                    onClick={() => {
-                      loginMock(q.key);
-                      go();
-                    }}
-                    className="rounded-xl border border-border bg-surface p-3 text-left transition-colors hover:border-primary hover:bg-brand-50"
-                  >
-                    <div className="text-sm font-semibold">{q.label}</div>
-                    <div className="text-xs text-muted-foreground">{q.hint}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <div className="h-px flex-1 bg-border" />
-              or use credentials
-              <div className="h-px flex-1 bg-border" />
-            </div>
-
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
@@ -146,9 +109,6 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Demo logins work offline. Credential sign-in calls the API.
-        </p>
       </div>
     </main>
   );

@@ -36,13 +36,20 @@ Tooling: **pnpm workspaces** + **Turborepo**.
 
 ```bash
 pnpm install
-cp .env.example .env
+docker compose up -d                                        # PostgreSQL 16 on :5432
+cp apps/api/.env.example apps/api/.env                      # set a real JWT_SECRET
+cp apps/web/.env.example apps/web/.env
+cp packages/database/.env.example packages/database/.env
 pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
 pnpm dev
 ```
 
 - Web → http://localhost:3000
 - API → http://localhost:4000/v1
+
+Seeded logins: `owner@hardwarepos.test` / `password123` (Owner), Manager PIN `2222`, Cashier PIN `1111`.
 
 See [docs/getting-started.md](./docs/getting-started.md) for full setup, and
 [docs/architecture.md](./docs/architecture.md) for the system design.

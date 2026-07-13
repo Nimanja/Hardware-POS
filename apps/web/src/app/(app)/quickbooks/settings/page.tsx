@@ -2,8 +2,12 @@
 
 import * as React from 'react';
 
+import { CURRENCY_CODE } from '@hardware-pos/shared';
+
+import { CurrencyMismatchWarning } from '@/components/quickbooks/currency-warning';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -26,6 +30,7 @@ export default function QuickBooksSettingsPage() {
         <CardTitle>Sync settings</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        <CurrencyMismatchWarning currency={state.company?.currency} />
         <ToggleRow
           label="Auto-sync products"
           hint="Pull products, prices, and stock from QuickBooks on a schedule."
@@ -62,6 +67,14 @@ export default function QuickBooksSettingsPage() {
               <option>Sandbox</option>
               <option>Production</option>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="qb-currency">QuickBooks company currency</Label>
+            <Input id="qb-currency" value={state.company?.currency ?? '—'} disabled />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pos-currency">POS currency</Label>
+            <Input id="pos-currency" value={CURRENCY_CODE} disabled />
           </div>
         </div>
 

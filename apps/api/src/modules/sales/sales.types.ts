@@ -1,4 +1,43 @@
-import { DiscountType, PaymentMethod, PaymentStatus, QuickBooksDocumentType } from '@hardware-pos/database';
+import {
+  DiscountType,
+  PaymentMethod,
+  PaymentStatus,
+  QuickBooksDocumentType,
+  SaleStatus,
+  SyncStatus,
+} from '@hardware-pos/database';
+
+/** A row in the sales history list — enriched with names + item count, money as numbers. */
+export interface SaleListItem {
+  id: string;
+  saleNumber: string;
+  status: SaleStatus;
+  createdAt: Date;
+  completedAt: Date | null;
+  customerName: string | null;
+  cashierName: string | null;
+  itemCount: number;
+  subtotal: number;
+  totalDiscount: number;
+  orderDiscountAmount: number;
+  taxAmount: number;
+  total: number;
+  paidAmount: number;
+  balanceAmount: number;
+  paymentStatus: PaymentStatus;
+  paymentMethods: PaymentMethod[];
+  quickbooksDocumentType: QuickBooksDocumentType | null;
+  syncStatus: SyncStatus;
+}
+
+/** Filters accepted by the sales history list. */
+export interface SalesListFilter {
+  syncStatus?: SyncStatus;
+  paymentStatus?: PaymentStatus;
+  search?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+}
 
 /** Normalized cart line coming into the compute pipeline. */
 export interface CartItemInput {
@@ -19,6 +58,8 @@ export interface ComputedLine {
   productId: string;
   productName: string;
   sku: string | null;
+  /** Whether the sale should decrement the product's on-hand stock. */
+  trackInventory: boolean;
   unitPrice: number;
   quantity: number;
   discountType: DiscountType | null;
@@ -31,11 +72,28 @@ export interface ComputedLine {
   lineTotal: number;
 }
 
+/** Order-level (whole-cart) discount input coming into the compute pipeline. */
+export interface OrderDiscountInput {
+  type?: DiscountType | null;
+  value?: number | null;
+  reason?: string | null;
+  /** Fresh approval token (one-shot completion) for an over-limit order discount. */
+  approvalToken?: string | null;
+  /** Approver already recorded (completing a draft). */
+  approvedById?: string | null;
+}
+
 /** Computed sale totals + lines. */
 export interface ComputedSale {
   lines: ComputedLine[];
   subtotal: number;
+  /** Sum of per-line (product) discounts. */
   totalDiscount: number;
+  orderDiscountType: DiscountType | null;
+  orderDiscountValue: number | null;
+  orderDiscountAmount: number;
+  orderDiscountReason: string | null;
+  orderDiscountApprovedById: string | null;
   taxAmount: number;
   total: number;
 }

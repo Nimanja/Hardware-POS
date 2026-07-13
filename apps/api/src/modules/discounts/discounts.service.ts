@@ -10,6 +10,13 @@ import { ApproveDiscountRequestDto } from './dto/approve-discount-request.dto';
 
 const APPROVAL_TOKEN_TTL = '15m';
 
+/**
+ * Sentinel `productId` used for order-level (whole-cart) discount approvals, which
+ * are not tied to a single product. Reuses the same token mechanism as line
+ * discounts.
+ */
+export const ORDER_DISCOUNT_KEY = '__order__';
+
 export interface ResolveApprovalInput {
   tenantId: string;
   actorRole: UserRole;

@@ -1,23 +1,24 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import {
-  DiscountType,
-  PaymentStatus,
-  QuickBooksDocumentType,
-  Sale,
-} from '@hardware-pos/database';
+import { DiscountType, PaymentStatus, QuickBooksDocumentType } from '@hardware-pos/database';
 import type { Paginated } from '@hardware-pos/shared';
 
 import { paginate } from '../../common/pagination';
 import { round2, sum2 } from '../../common/money';
 import { AuthenticatedUser } from '../auth/auth.types';
-import { DiscountsService } from '../discounts/discounts.service';
+import { DiscountsService, ORDER_DISCOUNT_KEY } from '../discounts/discounts.service';
 import { SettingsService } from '../settings/settings.service';
 import { CreateDraftDto } from './dto/create-draft.dto';
 import { CompleteSaleDto } from './dto/complete-sale.dto';
 import { QuerySalesDto } from './dto/query-sales.dto';
 import { SaleItemInputDto } from './dto/sale-item.dto';
-import { SaleWithRelations, SalesRepository } from './sales.repository';
-import { CartItemInput, ComputedSale, PersistSaleInput } from './sales.types';
+import { SaleListRow, SaleWithRelations, SalesRepository } from './sales.repository';
+import {
+  CartItemInput,
+  ComputedSale,
+  OrderDiscountInput,
+  PersistSaleInput,
+  SaleListItem,
+} from './sales.types';
 
 @Injectable()
 export class SalesService {
@@ -27,14 +28,20 @@ export class SalesService {
     private readonly discountsService: DiscountsService,
   ) {}
 
-  async list(tenantId: string, query: QuerySalesDto): Promise<Paginated<Sale>> {
-    const [items, total] = await this.salesRepository.findManyByTenant(
+  async list(tenantId: string, query: QuerySalesDto): Promise<Paginated<SaleListItem>> {
+    const [rows, total] = await this.salesRepository.findManyByTenant(
       tenantId,
-      query.syncStatus,
+      {
+        syncStatus: query.syncStatus,
+        paymentStatus: query.paymentStatus,
+        search: query.search?.trim() || undefined,
+        dateFrom: query.dateFrom,
+        dateTo: query.dateTo,
+      },
       query.skip,
       query.take,
     );
-    return paginate(items, total, query.page, query.pageSize);
+    return paginate(rows.map(toSaleListItem), total, query.page, query.pageSize);
   }
 
   async getById(tenantId: string, id: string): Promise<SaleWithRelations> {
@@ -105,7 +112,13 @@ export class SalesService {
 
     await this.assertLocations(tenantId, branchId, registerId, customerId);
 
-    const computed = await this.computeCart(tenantId, actor, items);
+    const orderDiscountInput: OrderDiscountInput = {
+      type: dto.orderDiscountType,
+      value: dto.orderDiscountValue,
+      reason: dto.orderDiscountReason,
+      approvalToken: dto.orderApprovalToken,
+    };
+    const computed = await this.computeCart(tenantId, actor, items, orderDiscountInput);
     const paidAmount = sum2(dto.payments.map((p) => p.amount));
     const { total } = computed;
     const paymentStatus: PaymentStatus =
@@ -159,6 +172,7 @@ export class SalesService {
     tenantId: string,
     actor: AuthenticatedUser,
     items: CartItemInput[],
+    orderDiscountInput?: OrderDiscountInput,
   ): Promise<ComputedSale> {
     if (items.length === 0) {
       throw new BadRequestException('Cart is empty');
@@ -188,7 +202,7 @@ export class SalesService {
 
         const quantity = item.quantity;
         const onHand = Number(product.quantityOnHand);
-        if (quantity > onHand) {
+        if (product.trackInventory && quantity > onHand) {
           throw new BadRequestException(
             `Insufficient stock for ${product.name} (on hand ${onHand}, requested ${quantity})`,
           );
@@ -218,6 +232,7 @@ export class SalesService {
           productId: product.id,
           productName: product.name,
           sku: product.sku,
+          trackInventory: product.trackInventory,
           unitPrice: cachedPrice,
           quantity,
           discountType: item.discountType ?? null,
@@ -234,11 +249,69 @@ export class SalesService {
 
     const subtotal = sum2(lines.map((l) => l.lineSubtotal));
     const totalDiscount = sum2(lines.map((l) => l.discountAmount));
-    const taxable = round2(subtotal - totalDiscount);
+    // Order-level discount applies to the subtotal AFTER per-line discounts.
+    const discountedSubtotal = round2(subtotal - totalDiscount);
+    const orderDiscount = await this.resolveOrderDiscount(
+      tenantId,
+      actor,
+      discountedSubtotal,
+      orderDiscountInput,
+    );
+
+    const taxable = round2(discountedSubtotal - orderDiscount.amount);
     const taxAmount = settings.taxRatePercent > 0 ? round2((taxable * settings.taxRatePercent) / 100) : 0;
     const total = round2(taxable + taxAmount);
 
-    return { lines, subtotal, totalDiscount, taxAmount, total };
+    return {
+      lines,
+      subtotal,
+      totalDiscount,
+      orderDiscountType: orderDiscount.type,
+      orderDiscountValue: orderDiscount.value,
+      orderDiscountAmount: orderDiscount.amount,
+      orderDiscountReason: orderDiscount.reason,
+      orderDiscountApprovedById: orderDiscount.approvedById,
+      taxAmount,
+      total,
+    };
+  }
+
+  /**
+   * Compute the order-level discount against the post-line-discount subtotal and
+   * enforce the role limit (over-limit needs a covering manager approval token).
+   */
+  private async resolveOrderDiscount(
+    tenantId: string,
+    actor: AuthenticatedUser,
+    base: number,
+    input?: OrderDiscountInput,
+  ): Promise<{
+    type: DiscountType | null;
+    value: number | null;
+    amount: number;
+    reason: string | null;
+    approvedById: string | null;
+  }> {
+    const type = input?.type ?? null;
+    const value = input?.value ?? null;
+    if (!type || value == null || value <= 0 || base <= 0) {
+      return { type: null, value: null, amount: 0, reason: null, approvedById: null };
+    }
+
+    const amount = computeDiscount(base, type, value);
+    const effectivePercent = base > 0 ? (amount / base) * 100 : 0;
+    const approvedById = await this.discountsService.resolveApproval({
+      tenantId,
+      actorRole: actor.role,
+      productId: ORDER_DISCOUNT_KEY,
+      discountType: type,
+      discountValue: value,
+      effectivePercent,
+      approvalToken: input?.approvalToken,
+      existingApproverId: input?.approvedById,
+    });
+
+    return { type, value, amount, reason: input?.reason?.trim() || null, approvedById };
   }
 
   private async assertLocations(
@@ -257,6 +330,30 @@ export class SalesService {
       throw new BadRequestException(`Unknown customer ${customerId}`);
     }
   }
+}
+
+function toSaleListItem(row: SaleListRow): SaleListItem {
+  return {
+    id: row.id,
+    saleNumber: row.saleNumber,
+    status: row.status,
+    createdAt: row.createdAt,
+    completedAt: row.completedAt,
+    customerName: row.customer?.name ?? null,
+    cashierName: row.cashier?.name ?? null,
+    itemCount: row._count.items,
+    subtotal: Number(row.subtotal),
+    totalDiscount: Number(row.totalDiscount),
+    orderDiscountAmount: Number(row.orderDiscountAmount),
+    taxAmount: Number(row.taxAmount),
+    total: Number(row.total),
+    paidAmount: Number(row.paidAmount),
+    balanceAmount: Number(row.balanceAmount),
+    paymentStatus: row.paymentStatus,
+    paymentMethods: [...new Set(row.payments.map((p) => p.method))],
+    quickbooksDocumentType: row.quickbooksDocumentType,
+    syncStatus: row.syncStatus,
+  };
 }
 
 function toCartItem(dto: SaleItemInputDto): CartItemInput {
