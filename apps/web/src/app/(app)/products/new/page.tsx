@@ -9,16 +9,16 @@ import { ProductForm } from '@/components/products/product-form';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
 import { Permission } from '@/lib/permissions';
-import { fetchCategories, type Category } from '@/lib/products-api';
+import { fetchCategoryTree, type CategoryNode } from '@/lib/products-api';
 
 export default function NewProductPage() {
   const { session, hasPermission } = useAuth();
   const canManage = hasPermission(Permission.PRODUCT_MANAGE);
-  const [categories, setCategories] = React.useState<Category[]>([]);
+  const [categories, setCategories] = React.useState<CategoryNode[]>([]);
 
   React.useEffect(() => {
     if (session) {
-      fetchCategories(session).then(setCategories).catch(() => setCategories([]));
+      fetchCategoryTree(session).then(setCategories).catch(() => setCategories([]));
     }
   }, [session]);
 

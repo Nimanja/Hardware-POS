@@ -1,11 +1,12 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Building2, LogOut, MonitorSmartphone } from 'lucide-react';
+import { Building2, LogOut, MonitorSmartphone, PanelLeft } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { SyncStatus } from '@/components/sync-status';
 import { useAuth } from '@/lib/auth';
+import { useSidebar } from '@/lib/sidebar';
 
 function initials(name: string): string {
   return name
@@ -18,6 +19,7 @@ function initials(name: string): string {
 
 export function Header() {
   const { session, logout } = useAuth();
+  const { toggleCollapsed, openMobile } = useSidebar();
   const router = useRouter();
   if (!session) return null;
 
@@ -26,9 +28,19 @@ export function Header() {
     router.replace('/login');
   };
 
+  // Below md the button opens the mobile drawer; at md and up it toggles the
+  // desktop rail's collapsed state.
+  const onToggleNav = () => {
+    if (window.matchMedia('(min-width: 768px)').matches) toggleCollapsed();
+    else openMobile();
+  };
+
   return (
     <header className="flex h-16 items-center justify-between gap-4 border-b border-border bg-surface px-4 md:px-6">
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <Button variant="ghost" size="icon" onClick={onToggleNav} aria-label="Toggle navigation">
+          <PanelLeft className="h-5 w-5" />
+        </Button>
         <span className="flex items-center gap-1.5">
           <Building2 className="h-4 w-4" />
           {session.branchName}

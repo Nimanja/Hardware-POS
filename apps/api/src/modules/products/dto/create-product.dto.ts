@@ -39,6 +39,10 @@ export class CreateProductDto {
 
   @IsString()
   @IsOptional()
+  subcategoryId?: string;
+
+  @IsString()
+  @IsOptional()
   @MaxLength(40)
   unitType?: string;
 

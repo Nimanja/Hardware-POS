@@ -6,6 +6,7 @@ import { Printer, ReceiptText, RefreshCw, Search } from 'lucide-react';
 
 import { PageHeader } from '@/components/page-header';
 import { SyncBadge } from '@/components/quickbooks/sync-badge';
+import { SaleReturnStatusBadge } from '@/components/returns/status-badges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -303,7 +304,10 @@ export default function SalesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <PaymentStatusBadge status={s.paymentStatus} />
+                      <div className="flex flex-col items-start gap-1">
+                        <PaymentStatusBadge status={s.paymentStatus} />
+                        <SaleReturnStatusBadge status={s.returnStatus} />
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <SyncBadge status={s.syncStatus} />

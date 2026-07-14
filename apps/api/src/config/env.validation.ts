@@ -1,5 +1,5 @@
 import { plainToInstance, Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
 
 export enum NodeEnv {
   Development = 'development',
@@ -109,6 +109,60 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   TOKEN_ENCRYPTION_KEY?: string;
+
+  // ── Documents / PDF (A4 quotations + bills) ──
+  /**
+   * Path to a Chrome/Chromium binary for server-side PDF generation. Leave unset
+   * to use Puppeteer's bundled Chromium. If neither is available the app falls
+   * back to serving print-ready A4 HTML.
+   */
+  @IsString()
+  @IsOptional()
+  PUPPETEER_EXECUTABLE_PATH?: string;
+
+  /** Base URL used to build public quotation share links (…/public/quotations/:token). */
+  @IsString()
+  @IsOptional()
+  PUBLIC_SHARE_BASE_URL?: string;
+
+  // ── Email / sharing ──
+  // `log` (default) records the message without sending — works with no creds.
+  // `resend` needs RESEND_API_KEY + MAIL_FROM. `smtp` needs the SMTP_* vars.
+  @IsIn(['log', 'resend', 'smtp'])
+  @IsOptional()
+  MAIL_PROVIDER = 'log';
+
+  /** Default From header, e.g. "Hardware POS <quotes@yourdomain.com>". */
+  @IsString()
+  @IsOptional()
+  MAIL_FROM?: string;
+
+  @IsString()
+  @IsOptional()
+  RESEND_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_HOST?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  @IsOptional()
+  SMTP_PORT = 587;
+
+  @IsString()
+  @IsOptional()
+  SMTP_SECURE = 'false';
+
+  @IsString()
+  @IsOptional()
+  SMTP_USER?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_PASS?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

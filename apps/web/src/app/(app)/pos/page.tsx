@@ -51,6 +51,7 @@ export default function PosPage() {
 
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('All');
+  const [subcategory, setSubcategory] = React.useState('All');
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(20);
   const [noteFor, setNoteFor] = React.useState<string | null>(null);
@@ -71,22 +72,28 @@ export default function PosPage() {
 
   // ── catalog filtering + pagination ─────────────────────────────────────────
   const categories = ['All', ...data.categories];
+  const activeCategory = data.categoryTree.find((c) => c.name === category);
+  const subcategories =
+    category !== 'All' && activeCategory && activeCategory.subcategories.length > 0
+      ? ['All', ...activeCategory.subcategories.map((s) => s.name)]
+      : [];
   const q = query.trim().toLowerCase();
   const filtered = React.useMemo(
     () =>
       data.products.filter((p) => {
         const matchesCat = category === 'All' || p.categoryName === category;
+        const matchesSub = subcategory === 'All' || p.subcategoryName === subcategory;
         const matchesQuery =
           !q ||
           p.name.toLowerCase().includes(q) ||
           (p.sku ?? '').toLowerCase().includes(q) ||
           (p.barcode ?? '').toLowerCase().includes(q);
-        return matchesCat && matchesQuery;
+        return matchesCat && matchesSub && matchesQuery;
       }),
-    [data.products, category, q],
+    [data.products, category, subcategory, q],
   );
 
-  React.useEffect(() => setPage(1), [q, category, pageSize]);
+  React.useEffect(() => setPage(1), [q, category, subcategory, pageSize]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageProducts = filtered.slice((page - 1) * pageSize, page * pageSize);
 
@@ -196,7 +203,7 @@ export default function PosPage() {
   const currency = data.settings.currency;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+    <div className="grid gap-5 lg:grid-cols-[1.9fr_1fr]">
       {/* ── Catalog ─────────────────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center gap-3">
@@ -228,7 +235,10 @@ export default function PosPage() {
           {categories.map((c) => (
             <button
               key={c}
-              onClick={() => setCategory(c)}
+              onClick={() => {
+                setCategory(c);
+                setSubcategory('All');
+              }}
               className={cn(
                 'rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
                 category === c
@@ -241,11 +251,30 @@ export default function PosPage() {
           ))}
         </div>
 
+        {subcategories.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {subcategories.map((s) => (
+              <button
+                key={s}
+                onClick={() => setSubcategory(s)}
+                className={cn(
+                  'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  subcategory === s
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-border',
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {data.loading ? (
           <p className="py-16 text-center text-sm text-muted-foreground">Loading products…</p>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {pageProducts.map((p) => {
                 const outOfStock = p.quantityOnHand <= 0;
                 return (
@@ -271,7 +300,7 @@ export default function PosPage() {
                         <Plus className="h-4 w-4" />
                       </span>
                     </div>
-                    <div className="flex flex-1 flex-col p-2.5">
+                    <div className="flex flex-1 flex-col p-2">
                       <div className="line-clamp-2 min-h-8 text-xs font-medium leading-tight">
                         {p.name}
                       </div>
@@ -393,7 +422,7 @@ export default function PosPage() {
           </div>
         </div>
 
-        <CardContent className="max-h-[42vh] space-y-3 overflow-auto p-4">
+        <CardContent className="max-h-[52vh] space-y-3 overflow-auto p-4">
           {cart.items.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               Tap a product to add it to the cart.

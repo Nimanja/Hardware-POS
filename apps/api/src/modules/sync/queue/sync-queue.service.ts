@@ -66,6 +66,38 @@ export class SyncQueueService {
   }
 
   /**
+   * Enqueue an outbound return sync as part of the return-completion transaction
+   * (transactional outbox). Committed atomically with the Return so a failed
+   * QuickBooks push never loses the return.
+   */
+  async enqueueReturnSync(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    returnId: string,
+  ): Promise<void> {
+    await tx.syncJob.create({
+      data: {
+        tenantId,
+        type: SyncJobType.RETURN_SYNC,
+        direction: SyncDirection.OUTBOUND,
+        entityType: SyncEntityType.RETURN,
+        entityId: returnId,
+        status: 'PENDING',
+      },
+    });
+    await tx.syncLog.create({
+      data: {
+        tenantId,
+        entityType: SyncEntityType.RETURN,
+        entityId: returnId,
+        direction: SyncDirection.OUTBOUND,
+        status: 'PENDING',
+        message: 'Return queued for QuickBooks sync',
+      },
+    });
+  }
+
+  /**
    * Atomically claim up to `limit` due jobs. A job is due when it is PENDING, its
    * `scheduledAt` has passed, and it still has attempts left. Claiming flips it to
    * SYNCING and increments `attempts`; the conditional update makes concurrent
@@ -154,6 +186,40 @@ export class SyncQueueService {
       }),
       this.prisma.sale.updateMany({
         where: { id: saleId, tenantId },
+        data: { syncStatus: 'PENDING', syncError: null },
+      }),
+    ]);
+
+    return { id: job.id, syncStatus: 'PENDING' };
+  }
+
+  /**
+   * Manual "Retry Sync" for a return: re-queue its latest sync job with a fresh
+   * attempt budget and reset the return's sync status to PENDING.
+   */
+  async requeueReturn(tenantId: string, returnId: string): Promise<{ id: string; syncStatus: string }> {
+    const job = await this.prisma.syncJob.findFirst({
+      where: { tenantId, entityType: SyncEntityType.RETURN, entityId: returnId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!job) {
+      throw new NotFoundException(`No sync job found for return ${returnId}`);
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.syncJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'PENDING',
+          attempts: 0,
+          scheduledAt: new Date(),
+          startedAt: null,
+          completedAt: null,
+          lastError: null,
+        },
+      }),
+      this.prisma.return.updateMany({
+        where: { id: returnId, tenantId },
         data: { syncStatus: 'PENDING', syncError: null },
       }),
     ]);

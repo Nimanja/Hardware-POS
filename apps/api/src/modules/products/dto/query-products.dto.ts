@@ -15,6 +15,10 @@ export class QueryProductsDto extends PaginationQueryDto {
   @IsOptional()
   categoryId?: string;
 
+  @IsString()
+  @IsOptional()
+  subcategoryId?: string;
+
   /**
    * Filter by active/inactive as a string ('true' | 'false'); omit to include
    * both. Kept as a string so the global implicit-conversion pipe can't mangle it.

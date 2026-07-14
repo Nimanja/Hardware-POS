@@ -1,3 +1,5 @@
+import type { SaleReturnStatusCode } from '@hardware-pos/shared';
+
 import { api } from './api';
 import type { Session } from './auth';
 import type { DiscountType } from './cart';
@@ -112,6 +114,8 @@ export interface SaleListItem {
   balanceAmount: number;
   paymentStatus: PaymentStatusCode;
   paymentMethods: PaymentMethodCode[];
+  returnStatus: SaleReturnStatusCode;
+  returnedAmount: number;
   quickbooksDocumentType: string | null;
   syncStatus: SyncStatusCode;
 }
@@ -174,6 +178,8 @@ export interface SaleDetail {
   paidAmount: number;
   balanceAmount: number;
   paymentStatus: PaymentStatusCode;
+  returnStatus: SaleReturnStatusCode;
+  returnedAmount: number;
   quickbooksDocumentType: string | null;
   quickbooksDocumentId: string | null;
   syncStatus: SyncStatusCode;
@@ -200,6 +206,8 @@ interface ApiSaleDetail {
   paidAmount: string | number;
   balanceAmount: string | number;
   paymentStatus: PaymentStatusCode;
+  returnStatus: SaleReturnStatusCode;
+  returnedAmount: string | number;
   quickbooksDocumentType: string | null;
   quickbooksDocumentId: string | null;
   syncStatus: SyncStatusCode;
@@ -264,6 +272,8 @@ export async function fetchSale(session: Session, id: string): Promise<SaleDetai
     paidAmount: Number(s.paidAmount),
     balanceAmount: Number(s.balanceAmount),
     paymentStatus: s.paymentStatus,
+    returnStatus: s.returnStatus,
+    returnedAmount: Number(s.returnedAmount),
     quickbooksDocumentType: s.quickbooksDocumentType,
     quickbooksDocumentId: s.quickbooksDocumentId,
     syncStatus: s.syncStatus,
@@ -294,4 +304,12 @@ export async function fetchSale(session: Session, id: string): Promise<SaleDetai
 /** Retry the QuickBooks push for a completed sale. */
 export async function retrySaleSync(session: Session, id: string): Promise<void> {
   await api.post(`/sales/${id}/retry-sync`, undefined, auth(session));
+}
+
+/** Fetch the A4 final-bill / invoice HTML for a completed sale (print or Save-as-PDF). */
+export function fetchSaleBillDocument(
+  session: Session,
+  id: string,
+): Promise<{ html: string; format: string }> {
+  return api.get(`/documents/sales/${id}`, auth(session));
 }

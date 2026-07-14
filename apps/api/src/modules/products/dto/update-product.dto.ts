@@ -41,6 +41,10 @@ export class UpdateProductDto {
 
   @IsString()
   @IsOptional()
+  subcategoryId?: string;
+
+  @IsString()
+  @IsOptional()
   @MaxLength(40)
   unitType?: string;
 

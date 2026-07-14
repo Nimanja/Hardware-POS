@@ -351,6 +351,8 @@ function toSaleListItem(row: SaleListRow): SaleListItem {
     balanceAmount: Number(row.balanceAmount),
     paymentStatus: row.paymentStatus,
     paymentMethods: [...new Set(row.payments.map((p) => p.method))],
+    returnStatus: row.returnStatus,
+    returnedAmount: Number(row.returnedAmount),
     quickbooksDocumentType: row.quickbooksDocumentType,
     syncStatus: row.syncStatus,
   };

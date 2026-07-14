@@ -18,7 +18,7 @@ import {
   deleteProductImage,
   updateProduct,
   uploadProductImage,
-  type Category,
+  type CategoryNode,
   type ManagedProduct,
   type ProductInput,
 } from '@/lib/products-api';
@@ -30,6 +30,7 @@ interface FormState {
   barcode: string;
   brand: string;
   categoryId: string;
+  subcategoryId: string;
   unitType: string;
   unitPrice: string;
   costPrice: string;
@@ -50,6 +51,7 @@ function initialState(p?: ManagedProduct): FormState {
     barcode: p?.barcode ?? '',
     brand: p?.brand ?? '',
     categoryId: p?.categoryId ?? '',
+    subcategoryId: p?.subcategoryId ?? '',
     unitType: p?.unitType ?? '',
     unitPrice: p ? String(p.unitPrice) : '',
     costPrice: p?.costPrice != null ? String(p.costPrice) : '',
@@ -73,7 +75,7 @@ export function ProductForm({
   isAdmin,
 }: {
   session: Session;
-  categories: Category[];
+  categories: CategoryNode[];
   /** Present in edit mode. */
   product?: ManagedProduct;
   /** Owner/Admin — may override QuickBooks-managed stock. */
@@ -92,6 +94,7 @@ export function ProductForm({
 
   const qbManaged = !!product?.quickbooksItemId;
   const stockLocked = qbManaged && !isAdmin;
+  const subcategories = categories.find((c) => c.id === form.categoryId)?.subcategories ?? [];
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -149,6 +152,7 @@ export function ProductForm({
     barcode: form.barcode.trim() || null,
     brand: form.brand.trim() || null,
     categoryId: form.categoryId || null,
+    subcategoryId: form.subcategoryId || null,
     unitType: form.unitType.trim() || null,
     unitPrice: Number(form.unitPrice) || 0,
     costPrice: numOrNull(form.costPrice),
@@ -222,11 +226,36 @@ export function ProductForm({
               <Input value={form.brand} onChange={(e) => set('brand', e.target.value)} placeholder="e.g. Bosch" />
             </Field>
             <Field label="Category">
-              <Select value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)}>
+              <Select
+                value={form.categoryId}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, categoryId: e.target.value, subcategoryId: '' }))
+                }
+              >
                 <option value="">Uncategorized</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Subcategory">
+              <Select
+                value={form.subcategoryId}
+                onChange={(e) => set('subcategoryId', e.target.value)}
+                disabled={subcategories.length === 0}
+              >
+                <option value="">
+                  {!form.categoryId
+                    ? 'Select a category first'
+                    : subcategories.length === 0
+                      ? 'No subcategories'
+                      : 'None'}
+                </option>
+                {subcategories.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
                   </option>
                 ))}
               </Select>

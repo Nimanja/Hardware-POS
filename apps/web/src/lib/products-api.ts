@@ -12,6 +12,7 @@ export interface ManagedProduct {
   description: string | null;
   brand: string | null;
   categoryId: string | null;
+  subcategoryId: string | null;
   unitType: string | null;
   unitPrice: number;
   costPrice: number | null;
@@ -39,6 +40,7 @@ export interface ProductsQuery {
   pageSize?: number;
   search?: string;
   categoryId?: string;
+  subcategoryId?: string;
   isActive?: 'true' | 'false';
   syncStatus?: ProductSyncStatus;
   stockStatus?: 'IN' | 'OUT';
@@ -51,6 +53,7 @@ export interface ProductInput {
   description?: string | null;
   brand?: string | null;
   categoryId?: string | null;
+  subcategoryId?: string | null;
   unitType?: string | null;
   unitPrice: number;
   costPrice?: number | null;
@@ -67,6 +70,64 @@ export interface Category {
   id: string;
   name: string;
   productCount?: number;
+}
+
+/** A subcategory nested under a category. */
+export interface Subcategory {
+  id: string;
+  categoryId: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  imageUrl: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  productCount: number;
+}
+
+/** A category with its nested subcategories (the `/categories` tree shape). */
+export interface CategoryNode {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  imageUrl: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  quickbooksItemId: string | null;
+  productCount: number;
+  subcategoryCount: number;
+  subcategories: Subcategory[];
+}
+
+export interface CategoryInput {
+  name: string;
+  slug?: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  sortOrder?: number;
+}
+
+export interface CategoryUpdate {
+  name?: string;
+  description?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface SubcategoryInput {
+  categoryId: string;
+  name: string;
+  slug?: string;
+  description?: string | null;
+  sortOrder?: number;
+}
+
+export interface SubcategoryUpdate {
+  name?: string;
+  description?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 /** Raw product JSON (decimals arrive as strings). */
@@ -112,6 +173,7 @@ function buildQuery(q: ProductsQuery): string {
   params.set('pageSize', String(q.pageSize ?? 25));
   if (q.search) params.set('search', q.search);
   if (q.categoryId) params.set('categoryId', q.categoryId);
+  if (q.subcategoryId) params.set('subcategoryId', q.subcategoryId);
   if (q.isActive) params.set('isActive', q.isActive);
   if (q.syncStatus) params.set('syncStatus', q.syncStatus);
   if (q.stockStatus) params.set('stockStatus', q.stockStatus);
@@ -192,4 +254,79 @@ export async function syncProductToQuickBooks(
 
 export async function fetchCategories(session: Session): Promise<Category[]> {
   return api.get<Category[]>('/categories', auth(session));
+}
+
+// ── Category tree + management ────────────────────────────────────────────────
+
+/** Fetch the full category tree (categories with nested subcategories). */
+export async function fetchCategoryTree(
+  session: Session,
+  activeOnly = false,
+): Promise<CategoryNode[]> {
+  return api.get<CategoryNode[]>(`/categories${activeOnly ? '?active=true' : ''}`, auth(session));
+}
+
+export async function createCategory(session: Session, input: CategoryInput): Promise<CategoryNode> {
+  return api.post<CategoryNode>('/product-categories', input, auth(session));
+}
+
+export async function updateCategory(
+  session: Session,
+  id: string,
+  input: CategoryUpdate,
+): Promise<CategoryNode> {
+  return api.patch<CategoryNode>(`/product-categories/${id}`, input, auth(session));
+}
+
+export async function deactivateCategory(session: Session, id: string): Promise<CategoryNode> {
+  return api.post<CategoryNode>(`/product-categories/${id}/deactivate`, undefined, auth(session));
+}
+
+export async function reactivateCategory(session: Session, id: string): Promise<CategoryNode> {
+  return api.post<CategoryNode>(`/product-categories/${id}/reactivate`, undefined, auth(session));
+}
+
+export async function reorderCategories(
+  session: Session,
+  orderedIds: string[],
+): Promise<CategoryNode[]> {
+  return api.post<CategoryNode[]>('/product-categories/reorder', { orderedIds }, auth(session));
+}
+
+export async function createSubcategory(
+  session: Session,
+  input: SubcategoryInput,
+): Promise<Subcategory> {
+  return api.post<Subcategory>('/product-subcategories', input, auth(session));
+}
+
+export async function updateSubcategory(
+  session: Session,
+  id: string,
+  input: SubcategoryUpdate,
+): Promise<Subcategory> {
+  return api.patch<Subcategory>(`/product-subcategories/${id}`, input, auth(session));
+}
+
+export async function deactivateSubcategory(session: Session, id: string): Promise<Subcategory> {
+  return api.post<Subcategory>(`/product-subcategories/${id}/deactivate`, undefined, auth(session));
+}
+
+export async function reactivateSubcategory(session: Session, id: string): Promise<Subcategory> {
+  return api.post<Subcategory>(`/product-subcategories/${id}/reactivate`, undefined, auth(session));
+}
+
+export async function moveSubcategory(
+  session: Session,
+  id: string,
+  categoryId: string,
+): Promise<Subcategory> {
+  return api.post<Subcategory>(`/product-subcategories/${id}/move`, { categoryId }, auth(session));
+}
+
+export async function fetchSubcategories(
+  session: Session,
+  categoryId: string,
+): Promise<Subcategory[]> {
+  return api.get<Subcategory[]>(`/product-subcategories?categoryId=${categoryId}`, auth(session));
 }

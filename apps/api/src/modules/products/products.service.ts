@@ -29,6 +29,7 @@ export class ProductsService {
       {
         search: query.search,
         categoryId: query.categoryId,
+        subcategoryId: query.subcategoryId,
         isActive: query.isActive === undefined ? undefined : query.isActive === 'true',
         syncStatus: query.syncStatus,
         stockStatus: query.stockStatus,
@@ -47,6 +48,7 @@ export class ProductsService {
         sku: query.sku,
         barcode: query.barcode,
         categoryId: query.categoryId,
+        subcategoryId: query.subcategoryId,
         isActive: query.isActive,
       },
       query.skip,
@@ -73,6 +75,7 @@ export class ProductsService {
 
   /** Create a locally-managed product (not yet in QuickBooks → NOT_SYNCED). */
   async create(tenantId: string, dto: CreateProductDto): Promise<Product> {
+    const link = await this.resolveCategoryLink(tenantId, dto.categoryId, dto.subcategoryId);
     const data: Prisma.ProductUncheckedCreateInput = {
       tenantId,
       name: dto.name,
@@ -80,7 +83,8 @@ export class ProductsService {
       barcode: dto.barcode ?? null,
       description: dto.description ?? null,
       brand: dto.brand ?? null,
-      categoryId: dto.categoryId ?? null,
+      categoryId: link.categoryId ?? null,
+      subcategoryId: link.subcategoryId ?? null,
       unitType: dto.unitType ?? null,
       unitPrice: dto.unitPrice,
       costPrice: dto.costPrice ?? null,
@@ -124,6 +128,13 @@ export class ProductsService {
       );
     }
 
+    const link = await this.resolveCategoryLink(
+      tenantId,
+      dto.categoryId,
+      dto.subcategoryId,
+      existing.categoryId,
+    );
+
     // Prisma treats `undefined` fields as "leave unchanged"; column names match the DTO.
     const data: Prisma.ProductUncheckedUpdateInput = {
       name: dto.name,
@@ -131,7 +142,8 @@ export class ProductsService {
       barcode: dto.barcode,
       description: dto.description,
       brand: dto.brand,
-      categoryId: dto.categoryId,
+      categoryId: link.categoryId,
+      subcategoryId: link.subcategoryId,
       unitType: dto.unitType,
       unitPrice: dto.unitPrice,
       costPrice: dto.costPrice,
@@ -192,6 +204,41 @@ export class ProductsService {
    */
   mockSync(tenantId: string): Promise<MockSyncSummary> {
     return this.productsRepository.mockSync(tenantId);
+  }
+
+  /**
+   * Validate + normalise the category ↔ subcategory link (spec §17): a chosen
+   * subcategory must belong to the effective category, and selecting one keeps
+   * `categoryId` aligned. A blank string clears the field; `undefined` leaves it
+   * unchanged (update semantics). Returns only the fields that should be written.
+   */
+  private async resolveCategoryLink(
+    tenantId: string,
+    categoryInput: string | undefined,
+    subcategoryInput: string | undefined,
+    existingCategoryId?: string | null,
+  ): Promise<{ categoryId?: string | null; subcategoryId?: string | null }> {
+    const out: { categoryId?: string | null; subcategoryId?: string | null } = {};
+
+    if (categoryInput !== undefined) out.categoryId = categoryInput === '' ? null : categoryInput;
+
+    if (subcategoryInput !== undefined) {
+      if (subcategoryInput === '') {
+        out.subcategoryId = null;
+      } else {
+        const sub = await this.productsRepository.findSubcategory(tenantId, subcategoryInput);
+        if (!sub) throw new BadRequestException('Subcategory not found');
+        const effectiveCategory =
+          out.categoryId !== undefined ? out.categoryId : (existingCategoryId ?? sub.categoryId);
+        if (effectiveCategory && effectiveCategory !== sub.categoryId) {
+          throw new BadRequestException('Subcategory does not belong to the selected category');
+        }
+        out.subcategoryId = sub.id;
+        out.categoryId = sub.categoryId; // keep the two columns consistent
+      }
+    }
+
+    return out;
   }
 
   private mapWriteError(err: unknown): Error {
