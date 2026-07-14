@@ -2,10 +2,15 @@
 
 import Link from 'next/link';
 import * as React from 'react';
-import { Printer, ReceiptText, RefreshCw, Search } from 'lucide-react';
+import { FileDown, FileSpreadsheet, Printer, ReceiptText, RefreshCw, Search } from 'lucide-react';
 
 import { PageHeader } from '@/components/page-header';
 import { SyncBadge } from '@/components/quickbooks/sync-badge';
+import {
+  DateRangeFilter,
+  resolveDateRange,
+  type DateRangeValue,
+} from '@/components/sales/date-range-filter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,42 +19,18 @@ import { Select } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
 import { reprintCustomerReceipt } from '@/lib/receipt-print';
 import {
+  downloadSalesReport,
   fetchSales,
   retrySaleSync,
   type PaymentStatusCode,
+  type ReportFormat,
   type SaleListItem,
   type SalesQuery,
   type SyncStatusCode,
 } from '@/lib/sales';
 import { cn, formatMoney } from '@/lib/utils';
 
-type DatePreset = 'ALL' | 'TODAY' | 'WEEK' | 'MONTH';
-
-const DATE_PRESETS: { key: DatePreset; label: string }[] = [
-  { key: 'ALL', label: 'All time' },
-  { key: 'TODAY', label: 'Today' },
-  { key: 'WEEK', label: 'This week' },
-  { key: 'MONTH', label: 'This month' },
-];
-
 const PAGE_SIZES = [20, 30, 40, 50];
-
-function dateRangeFor(preset: DatePreset): { dateFrom?: string; dateTo?: string } {
-  if (preset === 'ALL') return {};
-  const now = new Date();
-  const start = new Date(now);
-  if (preset === 'TODAY') {
-    start.setHours(0, 0, 0, 0);
-  } else if (preset === 'WEEK') {
-    const day = (start.getDay() + 6) % 7; // Monday-based week
-    start.setDate(start.getDate() - day);
-    start.setHours(0, 0, 0, 0);
-  } else {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-  }
-  return { dateFrom: start.toISOString(), dateTo: now.toISOString() };
-}
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-LK', {
@@ -80,7 +61,7 @@ export default function SalesPage() {
 
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
-  const [preset, setPreset] = React.useState<DatePreset>('ALL');
+  const [dateRange, setDateRange] = React.useState<DateRangeValue>({ preset: 'ALL' });
   const [paymentStatus, setPaymentStatus] = React.useState<PaymentStatusCode | ''>('');
   const [syncStatus, setSyncStatus] = React.useState<SyncStatusCode | ''>('');
   const [page, setPage] = React.useState(1);
@@ -92,6 +73,7 @@ export default function SalesPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [reloadKey, setReloadKey] = React.useState(0);
+  const [exporting, setExporting] = React.useState<ReportFormat | null>(null);
 
   // Debounce the search box so we don't refetch on every keystroke.
   React.useEffect(() => {
@@ -102,22 +84,25 @@ export default function SalesPage() {
   // Reset to page 1 whenever a filter changes.
   React.useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, preset, paymentStatus, syncStatus, pageSize]);
+  }, [debouncedSearch, dateRange, paymentStatus, syncStatus, pageSize]);
+
+  /** The filters currently applied to the table (report exports reuse these). */
+  const filterQuery = React.useMemo<Omit<SalesQuery, 'page' | 'pageSize'>>(
+    () => ({
+      search: debouncedSearch || undefined,
+      paymentStatus: paymentStatus || undefined,
+      syncStatus: syncStatus || undefined,
+      ...resolveDateRange(dateRange),
+    }),
+    [debouncedSearch, paymentStatus, syncStatus, dateRange],
+  );
 
   React.useEffect(() => {
     if (!session) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const query: SalesQuery = {
-      page,
-      pageSize,
-      search: debouncedSearch || undefined,
-      paymentStatus: paymentStatus || undefined,
-      syncStatus: syncStatus || undefined,
-      ...dateRangeFor(preset),
-    };
-    fetchSales(session, query)
+    fetchSales(session, { page, pageSize, ...filterQuery })
       .then((res) => {
         if (cancelled) return;
         setRows(res.items);
@@ -135,7 +120,20 @@ export default function SalesPage() {
     return () => {
       cancelled = true;
     };
-  }, [session, page, pageSize, debouncedSearch, preset, paymentStatus, syncStatus, reloadKey]);
+  }, [session, page, pageSize, filterQuery, reloadKey]);
+
+  const handleExport = async (format: ReportFormat) => {
+    if (!session) return;
+    setExporting(format);
+    setError(null);
+    try {
+      await downloadSalesReport(session, filterQuery, format);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(null);
+    }
+  };
 
   const handleReprint = async (id: string) => {
     if (!session) return;
@@ -176,7 +174,7 @@ export default function SalesPage() {
         }
       />
 
-      {/* Filters */}
+      {/* Toolbar: filters on the left, report exports on the right. */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -187,6 +185,7 @@ export default function SalesPage() {
             className="pl-10"
           />
         </div>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
         <Select
           value={paymentStatus}
           onChange={(e) => setPaymentStatus(e.target.value as PaymentStatusCode | '')}
@@ -209,23 +208,28 @@ export default function SalesPage() {
           <option value="FAILED">Failed</option>
           <option value="NOT_SYNCED">Not synced</option>
         </Select>
-      </div>
 
-      <div className="flex flex-wrap gap-2">
-        {DATE_PRESETS.map((p) => (
-          <button
-            key={p.key}
-            onClick={() => setPreset(p.key)}
-            className={cn(
-              'rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-              preset === p.key
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-border',
-            )}
+        {/* Report exports — cover every sale matching the current filters. */}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || total === 0 || exporting !== null}
+            onClick={() => void handleExport('pdf')}
           >
-            {p.label}
-          </button>
-        ))}
+            <FileDown className="h-4 w-4" />
+            {exporting === 'pdf' ? 'Exporting…' : 'Export PDF'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || total === 0 || exporting !== null}
+            onClick={() => void handleExport('xlsx')}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {exporting === 'xlsx' ? 'Exporting…' : 'Export Excel'}
+          </Button>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}

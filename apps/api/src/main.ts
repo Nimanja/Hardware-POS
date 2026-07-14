@@ -26,6 +26,8 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: config.get<string>('WEB_ORIGIN', 'http://localhost:3000'),
     credentials: true,
+    // Lets the browser read the filename of exported reports.
+    exposedHeaders: ['Content-Disposition'],
   });
 
   const port = config.get<number>('API_PORT', 4000);

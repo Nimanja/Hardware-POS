@@ -332,7 +332,7 @@ export class SalesService {
   }
 }
 
-function toSaleListItem(row: SaleListRow): SaleListItem {
+export function toSaleListItem(row: SaleListRow): SaleListItem {
   return {
     id: row.id,
     saleNumber: row.saleNumber,
