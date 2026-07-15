@@ -209,21 +209,23 @@ export class ProductsService {
   /**
    * Validate + normalise the category ↔ subcategory link (spec §17): a chosen
    * subcategory must belong to the effective category, and selecting one keeps
-   * `categoryId` aligned. A blank string clears the field; `undefined` leaves it
-   * unchanged (update semantics). Returns only the fields that should be written.
+   * `categoryId` aligned. A blank string or null clears the field; `undefined`
+   * leaves it unchanged (update semantics). Null reaches us at runtime because
+   * the web form sends `field || null` and @IsOptional lets null through.
+   * Returns only the fields that should be written.
    */
   private async resolveCategoryLink(
     tenantId: string,
-    categoryInput: string | undefined,
-    subcategoryInput: string | undefined,
+    categoryInput: string | null | undefined,
+    subcategoryInput: string | null | undefined,
     existingCategoryId?: string | null,
   ): Promise<{ categoryId?: string | null; subcategoryId?: string | null }> {
     const out: { categoryId?: string | null; subcategoryId?: string | null } = {};
 
-    if (categoryInput !== undefined) out.categoryId = categoryInput === '' ? null : categoryInput;
+    if (categoryInput !== undefined) out.categoryId = categoryInput || null;
 
     if (subcategoryInput !== undefined) {
-      if (subcategoryInput === '') {
+      if (!subcategoryInput) {
         out.subcategoryId = null;
       } else {
         const sub = await this.productsRepository.findSubcategory(tenantId, subcategoryInput);
