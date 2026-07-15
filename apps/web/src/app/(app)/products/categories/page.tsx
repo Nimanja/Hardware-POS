@@ -543,11 +543,11 @@ function CategoryFormDialog({
       description={editing ? 'Update this category’s details.' : 'Create a new top-level category.'}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={saving || !name.trim()}>
-            {saving ? 'Saving…' : editing ? 'Save changes' : 'Create'}
+          <Button onClick={submit} disabled={!name.trim()} isLoading={saving}>
+            {editing ? 'Save changes' : 'Create'}
           </Button>
         </>
       }
@@ -661,11 +661,11 @@ function SubcategoryFormDialog({
       }
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={saving || !name.trim()}>
-            {saving ? 'Saving…' : editing ? 'Save changes' : 'Create'}
+          <Button onClick={submit} disabled={!name.trim()} isLoading={saving}>
+            {editing ? 'Save changes' : 'Create'}
           </Button>
         </>
       }

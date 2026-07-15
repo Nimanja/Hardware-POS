@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
   ValidateNested,
@@ -115,7 +116,31 @@ export class UpdateDocumentSettingsDto {
 
   @IsString()
   @IsOptional()
+  signatureUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  stampUrl?: string;
+
+  @IsString()
+  @IsOptional()
   footerText?: string;
+
+  @Matches(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, { message: 'accentColor must be a hex colour' })
+  @IsOptional()
+  accentColor?: string;
+
+  @IsIn(['LEFT', 'CENTER', 'RIGHT'])
+  @IsOptional()
+  logoAlignment?: 'LEFT' | 'CENTER' | 'RIGHT';
+
+  @IsIn(['SMALL', 'MEDIUM', 'LARGE'])
+  @IsOptional()
+  logoSize?: 'SMALL' | 'MEDIUM' | 'LARGE';
+
+  @IsIn(['COMPACT', 'STANDARD', 'SPACIOUS'])
+  @IsOptional()
+  marginStyle?: 'COMPACT' | 'STANDARD' | 'SPACIOUS';
 
   @IsIn(['A4', 'THERMAL_80'])
   @IsOptional()
@@ -140,6 +165,14 @@ export class UpdateDocumentSettingsDto {
   @IsBoolean()
   @IsOptional()
   showDiscountColumn?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  showCustomerTaxNumber?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  showPageNumbers?: boolean;
 
   @IsIn(['A4', 'THERMAL', 'BOTH'])
   @IsOptional()

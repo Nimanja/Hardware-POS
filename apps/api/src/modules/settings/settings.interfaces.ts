@@ -54,8 +54,20 @@ export interface DocumentSettings {
   taxNumber: string | null;
   /** Absolute/inline logo URL (data: URIs allowed) for the document header. */
   logoUrl: string | null;
+  /** Uploaded authorized-signature image, drawn in the signature area. */
+  signatureUrl: string | null;
+  /** Uploaded company stamp/seal image, drawn near the signature area. */
+  stampUrl: string | null;
   /** Footer/thank-you line on documents. */
   footerText: string;
+  /** Document accent colour (headings, rules, totals). Hex, e.g. `#1d4ed8`. */
+  accentColor: string;
+  /** Header logo alignment. */
+  logoAlignment: 'LEFT' | 'CENTER' | 'RIGHT';
+  /** Header logo size. */
+  logoSize: 'SMALL' | 'MEDIUM' | 'LARGE';
+  /** Page-margin density for the A4 sheet. */
+  marginStyle: 'COMPACT' | 'STANDARD' | 'SPACIOUS';
   /** Default paper size for the bill/quotation documents. */
   defaultPaperSize: 'A4' | 'THERMAL_80';
   orientation: 'PORTRAIT' | 'LANDSCAPE';
@@ -63,6 +75,10 @@ export interface DocumentSettings {
   showSku: boolean;
   showTaxColumn: boolean;
   showDiscountColumn: boolean;
+  /** Show the customer's tax/VAT number in the bill-to block. */
+  showCustomerTaxNumber: boolean;
+  /** Print `Page X of Y` + generated timestamp in the PDF footer (multi-page). */
+  showPageNumbers: boolean;
   /** Default final-bill format. A4 is the default for this client. */
   defaultBillFormat: 'A4' | 'THERMAL' | 'BOTH';
   /** Render authorized/customer signature areas in the footer. */

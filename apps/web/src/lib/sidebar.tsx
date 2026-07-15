@@ -34,7 +34,14 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw != null) setCollapsed(raw === 'true');
+      if (raw != null) {
+        setCollapsed(raw === 'true');
+      } else if (window.matchMedia('(max-width: 1279px)').matches) {
+        // First visit on a tablet-class screen: default the rail to icon-only so
+        // the product grid gets the width it needs. Desktop keeps it expanded.
+        // Any later user toggle is persisted and wins on subsequent visits.
+        setCollapsed(true);
+      }
     } catch {
       /* ignore malformed / unavailable storage */
     }

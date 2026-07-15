@@ -1,5 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+export interface PdfOptions {
+  /** Render a running "Page X of Y" footer (multi-page bills). */
+  showPageNumbers?: boolean;
+  /** Optional left-aligned label in the footer (e.g. document number). */
+  footerLabel?: string;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 /**
  * Turns an A4 HTML document into PDF bytes using headless Chromium (Puppeteer).
  *
@@ -20,7 +35,7 @@ export class PdfService {
     return !this.unavailable;
   }
 
-  async htmlToPdf(html: string): Promise<Buffer | null> {
+  async htmlToPdf(html: string, options: PdfOptions = {}): Promise<Buffer | null> {
     const puppeteer = await this.loadPuppeteer();
     if (!puppeteer) return null;
 
@@ -35,10 +50,27 @@ export class PdfService {
       });
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
+      // A running "Page X of Y" footer for multi-page bills. Puppeteer renders
+      // its own header/footer templates in the reserved page margin, so the
+      // bottom margin is widened to make room when the footer is enabled.
+      const footer = options.showPageNumbers;
       const pdf = await page.pdf({
         format: 'A4',
         printBackground: true,
-        margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' },
+        displayHeaderFooter: footer,
+        headerTemplate: '<span></span>',
+        footerTemplate: footer
+          ? `<div style="width:100%;font-family:Arial,sans-serif;font-size:8px;color:#94a3b8;padding:0 12mm;display:flex;justify-content:space-between;">
+               <span>${escapeHtml(options.footerLabel ?? '')}</span>
+               <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+             </div>`
+          : '<span></span>',
+        margin: {
+          top: '12mm',
+          bottom: footer ? '18mm' : '12mm',
+          left: '12mm',
+          right: '12mm',
+        },
       });
       return Buffer.from(pdf);
     } catch (err) {

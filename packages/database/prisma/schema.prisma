@@ -220,6 +220,29 @@ model Tenant {
   quotations           Quotation[]
   quotationShareLogs   QuotationShareLog[]
   refreshTokens        RefreshToken[]
+  settings             TenantSettings[]
+}
+
+/**
+ * Persisted per-tenant application settings (currency/tax/returns/quotation
+ * defaults, document letterhead & template toggles, sharing templates). Stored
+ * as a single merged JSON document keyed by tenant (and optionally branch) so
+ * the settings shape can evolve without a migration per field; the settings
+ * service merges this over code defaults. `branchId = null` is the tenant-wide
+ * profile; a row with a branchId is a branch-level override (future use).
+ */
+model TenantSettings {
+  id        String   @id @default(cuid())
+  tenantId  String
+  branchId  String?
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, branchId])
+  @@index([tenantId])
 }
 
 model Branch {

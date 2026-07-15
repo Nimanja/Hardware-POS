@@ -173,11 +173,11 @@ export default function QuotationDetailPage() {
       {/* Action bar */}
       <div className="flex flex-wrap gap-2">
         {canEdit && (
-          <Link href={`/quotations/${q.id}/edit`}>
-            <Button variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/quotations/${q.id}/edit`}>
               <Pencil className="h-4 w-4" /> {q.status === 'DRAFT' ? 'Edit' : 'Create revision'}
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         )}
         {q.status === 'DRAFT' && canEdit && (
           <Button variant="outline" size="sm" disabled={busy} onClick={markSent}>
@@ -206,8 +206,14 @@ export default function QuotationDetailPage() {
           <Copy className="h-4 w-4" /> Duplicate
         </Button>
         {canCancel && (
-          <Button variant="ghost" size="sm" disabled={busy} onClick={cancel}>
-            <XCircle className="h-4 w-4" /> Cancel
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-danger hover:bg-danger-soft hover:text-danger"
+            disabled={busy}
+            onClick={cancel}
+          >
+            <XCircle className="h-4 w-4" /> Cancel quotation
           </Button>
         )}
       </div>

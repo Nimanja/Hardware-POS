@@ -65,6 +65,43 @@ export interface A4Document {
   signatures?: boolean;
   statusBadge?: string | null;
   watermark?: string | null;
+  // ── configurable letterhead / layout (from DocumentSettings) ──
+  /** Accent colour for headings, rules and the grand-total line. */
+  accentColor?: string;
+  /** Header logo alignment + size. */
+  logoAlignment?: 'LEFT' | 'CENTER' | 'RIGHT';
+  logoSize?: 'SMALL' | 'MEDIUM' | 'LARGE';
+  /** Page-margin density. */
+  marginStyle?: 'COMPACT' | 'STANDARD' | 'SPACIOUS';
+  /** Uploaded authorized-signature / company-stamp images for the sign-off area. */
+  signatureImageUrl?: string | null;
+  stampImageUrl?: string | null;
+  /** Print `Page X of Y` in the footer (multi-page bills). */
+  showPageNumbers?: boolean;
+  /** Generated-at label for the footer, e.g. `15 Jul 2026, 14:05`. */
+  generatedAt?: string | null;
+}
+
+const ACCENT_FALLBACK = '#1d4ed8';
+const LOGO_MAX_HEIGHT: Record<NonNullable<A4Document['logoSize']>, string> = {
+  SMALL: '40px',
+  MEDIUM: '56px',
+  LARGE: '78px',
+};
+const SHEET_PADDING: Record<NonNullable<A4Document['marginStyle']>, string> = {
+  COMPACT: '10mm 10mm',
+  STANDARD: '16mm 15mm',
+  SPACIOUS: '22mm 20mm',
+};
+const PAGE_MARGIN: Record<NonNullable<A4Document['marginStyle']>, string> = {
+  COMPACT: '8mm',
+  STANDARD: '12mm',
+  SPACIOUS: '18mm',
+};
+
+/** Validate a hex colour before it is interpolated into CSS (defence-in-depth). */
+function safeAccent(color?: string): string {
+  return color && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color) ? color : ACCENT_FALLBACK;
 }
 
 export function esc(value: unknown): string {
@@ -80,8 +117,18 @@ function multiline(value: string): string {
   return esc(value).replace(/\n/g, '<br />');
 }
 
-const A4_STYLES = `
-  :root { --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --brand:#1d4ed8; }
+function styles(doc: A4Document): string {
+  const accent = safeAccent(doc.accentColor);
+  const pad = SHEET_PADDING[doc.marginStyle ?? 'STANDARD'];
+  const pageMargin = PAGE_MARGIN[doc.marginStyle ?? 'STANDARD'];
+  const logoH = LOGO_MAX_HEIGHT[doc.logoSize ?? 'MEDIUM'];
+  // Chromium honours named page margin boxes for on-screen "Save as PDF"; the
+  // Puppeteer path supplies its own footer template (see PdfService).
+  const pageNumberCss = doc.showPageNumbers
+    ? `@page { @bottom-center { content: "Page " counter(page) " of " counter(pages); font-family: Arial, sans-serif; font-size: 9px; color: #94a3b8; } }`
+    : '';
+  return `
+  :root { --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --brand:${accent}; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { font-family: Arial, Helvetica, sans-serif; color: var(--ink); font-size: 12px; background: #f1f5f9; }
@@ -89,7 +136,7 @@ const A4_STYLES = `
   .print-btn { background: var(--brand); color: #fff; border: 0; border-radius: 8px; padding: 10px 20px; font-size: 14px; cursor: pointer; }
   .sheet {
     width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; color: var(--ink);
-    padding: 16mm 15mm; position: relative;
+    padding: ${pad}; position: relative;
   }
   .watermark {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -97,8 +144,12 @@ const A4_STYLES = `
     pointer-events: none; letter-spacing: 6px;
   }
   .doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; border-bottom: 2px solid var(--brand); padding-bottom: 12px; }
+  .doc-head.center { flex-direction: column; align-items: center; text-align: center; }
+  .doc-head.center .doc-title { text-align: center; }
+  .doc-head.right { flex-direction: row-reverse; }
   .seller { display: flex; gap: 12px; align-items: flex-start; }
-  .seller img { max-height: 56px; max-width: 160px; object-fit: contain; }
+  .doc-head.center .seller { flex-direction: column; align-items: center; text-align: center; }
+  .seller img { max-height: ${logoH}; max-width: 200px; object-fit: contain; }
   .seller h1 { font-size: 18px; margin: 0 0 2px; }
   .seller .muted { color: var(--muted); font-size: 11px; line-height: 1.5; }
   .doc-title { text-align: right; }
@@ -118,7 +169,7 @@ const A4_STYLES = `
   table.items tbody tr { page-break-inside: avoid; }
   .r { text-align: right; }
   .c { text-align: center; }
-  .totals { display: flex; justify-content: flex-end; margin-top: 14px; }
+  .totals { display: flex; justify-content: flex-end; margin-top: 14px; page-break-inside: avoid; }
   .totals table { width: 300px; border-collapse: collapse; }
   .totals td { padding: 4px 8px; font-size: 12px; }
   .totals td.k { color: var(--muted); }
@@ -127,10 +178,13 @@ const A4_STYLES = `
   .blocks { margin-top: 18px; display: grid; gap: 12px; }
   .block h4 { margin: 0 0 3px; font-size: 11px; text-transform: uppercase; color: var(--muted); }
   .block p { margin: 0; font-size: 11px; line-height: 1.55; white-space: normal; }
-  .signs { display: flex; justify-content: space-between; gap: 40px; margin-top: 40px; }
+  .signs { display: flex; justify-content: space-between; gap: 40px; margin-top: 40px; page-break-inside: avoid; }
   .sign { flex: 1; border-top: 1px solid var(--ink); padding-top: 6px; font-size: 11px; color: var(--muted); }
+  .sign img { display: block; max-height: 52px; max-width: 180px; object-fit: contain; margin-bottom: 4px; }
   .foot { margin-top: 22px; text-align: center; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); padding-top: 10px; }
-  @page { size: A4 portrait; margin: 12mm; }
+  .foot .gen { display: block; margin-top: 3px; font-size: 9.5px; color: #94a3b8; }
+  @page { size: A4 portrait; margin: ${pageMargin}; }
+  ${pageNumberCss}
   @media print {
     body { background: #fff; }
     .no-print { display: none; }
@@ -139,6 +193,7 @@ const A4_STYLES = `
     table.items tfoot { display: table-footer-group; }
   }
 `;
+}
 
 function sellerBlock(s: A4Seller): string {
   const logo = s.logoUrl ? `<img src="${esc(s.logoUrl)}" alt="${esc(s.name)}" />` : '';
@@ -182,22 +237,28 @@ export function renderA4Document(doc: A4Document): string {
   if (doc.notes) blocks.push(`<div class="block"><h4>Notes</h4><p>${multiline(doc.notes)}</p></div>`);
   if (doc.terms) blocks.push(`<div class="block"><h4>Terms &amp; Conditions</h4><p>${multiline(doc.terms)}</p></div>`);
 
+  // Authorized side can carry an uploaded signature image and/or company stamp.
+  const authorizedInner =
+    (doc.signatureImageUrl ? `<img src="${esc(doc.signatureImageUrl)}" alt="Authorized signature" />` : '') +
+    (doc.stampImageUrl ? `<img src="${esc(doc.stampImageUrl)}" alt="Company stamp" />` : '') +
+    'Authorized signature';
   const signatures = doc.signatures
-    ? `<div class="signs"><div class="sign">Authorized signature</div><div class="sign">Customer signature</div></div>`
+    ? `<div class="signs"><div class="sign">${authorizedInner}</div><div class="sign">Customer signature</div></div>`
     : '';
 
   const meta = doc.meta.map((m) => `<div><span class="k">${esc(m.label)}</span>${esc(m.value)}</div>`).join('');
+  const headClass = doc.logoAlignment === 'CENTER' ? ' center' : doc.logoAlignment === 'RIGHT' ? ' right' : '';
 
   return `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${esc(doc.title)} ${esc(doc.number)}</title>
-<style>${A4_STYLES}</style></head>
+<style>${styles(doc)}</style></head>
 <body>
   <div class="no-print"><button class="print-btn" onclick="window.print()">Print / Save as PDF</button></div>
   <div class="sheet">
     ${doc.watermark ? `<div class="watermark">${esc(doc.watermark)}</div>` : ''}
-    <div class="doc-head">
+    <div class="doc-head${headClass}">
       ${sellerBlock(doc.seller)}
       <div class="doc-title"><h2>${esc(doc.title)}</h2><div class="num">${esc(doc.number)}</div>${doc.statusBadge ? `<div class="badge">${esc(doc.statusBadge)}</div>` : ''}</div>
     </div>
@@ -212,7 +273,13 @@ export function renderA4Document(doc: A4Document): string {
     <div class="totals"><table>${summary}</table></div>
     <div class="blocks">${blocks.join('')}</div>
     ${signatures}
-    ${doc.footerText ? `<div class="foot">${esc(doc.footerText)}</div>` : ''}
+    ${
+      doc.footerText || doc.generatedAt
+        ? `<div class="foot">${esc(doc.footerText ?? '')}${
+            doc.generatedAt ? `<span class="gen">Generated ${esc(doc.generatedAt)}</span>` : ''
+          }</div>`
+        : ''
+    }
   </div>
 </body>
 </html>`;
