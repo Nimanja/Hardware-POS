@@ -1,47 +1,30 @@
-import { randomUUID } from 'crypto';
-import { unlink, writeFile } from 'fs/promises';
-import { basename, join } from 'path';
+import { Injectable, Logger } from '@nestjs/common';
 
-import { BadRequestException, Injectable } from '@nestjs/common';
-
-import { getUploadDir, UPLOAD_URL_PREFIX } from './storage.util';
-
-/** Allowed image mime types mapped to file extensions. */
-const IMAGE_EXT: Record<string, string> = {
-  'image/png': '.png',
-  'image/jpeg': '.jpg',
-  'image/jpg': '.jpg',
-  'image/webp': '.webp',
-  'image/gif': '.gif',
-};
+import { createStorageProvider } from './create-storage-provider';
+import type { StorageProvider, UploadedImage } from './storage-provider';
 
 /**
- * Local filesystem storage. Deliberately narrow (save/remove image) so it can be
- * swapped for S3 / Supabase Storage later without touching callers — replace this
- * class's body and keep the returned public URL shape (`/uploads/<file>`).
+ * Facade the rest of the app injects for file storage. WHERE files live is
+ * decided by the provider resolved from `STORAGE_PROVIDER` (local disk by
+ * default, S3/LocalStack with 's3') — see create-storage-provider.ts.
  */
 @Injectable()
 export class StorageService {
-  private readonly dir = getUploadDir();
+  private static readonly logger = new Logger(StorageService.name);
+  private readonly provider: StorageProvider;
+
+  constructor() {
+    this.provider = createStorageProvider(process.env);
+    StorageService.logger.log(`Upload storage provider: ${this.provider.kind}`);
+  }
 
   /** Persist an uploaded image and return its public URL. */
-  async saveImage(file: { buffer: Buffer; mimetype: string }): Promise<string> {
-    const ext = IMAGE_EXT[file.mimetype];
-    if (!ext) {
-      throw new BadRequestException('Unsupported image type (use PNG, JPEG, WebP, or GIF)');
-    }
-    const filename = `${randomUUID()}${ext}`;
-    await writeFile(join(this.dir, filename), file.buffer);
-    return `${UPLOAD_URL_PREFIX}/${filename}`;
+  saveImage(file: UploadedImage): Promise<string> {
+    return this.provider.saveImage(file);
   }
 
   /** Remove a previously stored file by its public URL (no-op if external/missing). */
-  async remove(url: string | null | undefined): Promise<void> {
-    if (!url || !url.startsWith(`${UPLOAD_URL_PREFIX}/`)) return;
-    try {
-      await unlink(join(this.dir, basename(url)));
-    } catch {
-      /* already gone — ignore */
-    }
+  remove(url: string | null | undefined): Promise<void> {
+    return this.provider.remove(url);
   }
 }

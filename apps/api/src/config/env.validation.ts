@@ -1,5 +1,5 @@
 import { plainToInstance, Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
 
 export enum NodeEnv {
   Development = 'development',
@@ -43,6 +43,33 @@ export class EnvironmentVariables {
   @Min(1)
   @IsOptional()
   REFRESH_TOKEN_TTL_DAYS = 30;
+
+  // ── Upload storage ──
+  /** Where uploaded files live: 'local' (API server disk) or 's3' (AWS/LocalStack). */
+  @IsIn(['local', 's3'])
+  @IsOptional()
+  STORAGE_PROVIDER = 'local';
+
+  @IsString()
+  @IsOptional()
+  S3_BUCKET?: string;
+
+  @IsString()
+  @IsOptional()
+  S3_REGION?: string;
+
+  /** Custom S3 endpoint (e.g. http://localhost:4566 for LocalStack). Omit for AWS. */
+  @IsString()
+  @IsOptional()
+  S3_ENDPOINT?: string;
+
+  @IsString()
+  @IsOptional()
+  S3_ACCESS_KEY_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  S3_SECRET_ACCESS_KEY?: string;
 
   // ── Sync queue worker ──
   // The background worker drains SyncJob rows. Disable ('false') in tests or when

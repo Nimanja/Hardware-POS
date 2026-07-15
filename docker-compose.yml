@@ -18,5 +18,30 @@ services:
       retries: 5
       start_period: 10s
 
+  # S3 emulator for local development (product image uploads).
+  # Pair with STORAGE_PROVIDER=s3 + S3_ENDPOINT=http://localhost:4566 in apps/api/.env.
+  localstack:
+    # Pinned to 4.x — the 2026 calendar-versioned releases require a LocalStack
+    # account auth token even for the free tier; 4.x runs without one.
+    image: localstack/localstack:4.0
+    container_name: hardware-pos-localstack
+    restart: always
+    environment:
+      SERVICES: s3
+      # NOTE: object persistence across container re-creation is a LocalStack
+      # Pro feature; with the community image, re-create the bucket after a
+      # fresh container (awslocal s3 mb s3://hardware-pos-uploads).
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"s3\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
 volumes:
   postgres_data:
+  localstack_data:

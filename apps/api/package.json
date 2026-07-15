@@ -14,6 +14,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1087.0",
     "@hardware-pos/database": "workspace:*",
     "@hardware-pos/shared": "workspace:*",
     "@nestjs/common": "^11.0.0",
