@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, authorizedFetch } from './api';
 import type { Session } from './auth';
 
 export type ProductSyncStatus = 'NOT_SYNCED' | 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
@@ -153,7 +153,8 @@ export function apiOrigin(): string {
 /** Resolve a stored image URL (`/uploads/..`) to an absolute URL the browser can load. */
 export function resolveImageUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  if (/^https?:\/\//.test(url)) return url;
+  // Absolute and local-preview URLs (object/data URLs) pass through untouched.
+  if (/^(https?:\/\/|blob:|data:)/.test(url)) return url;
   return `${apiOrigin()}${url}`;
 }
 
@@ -224,12 +225,8 @@ export async function uploadProductImage(
 ): Promise<ManagedProduct> {
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${api.baseUrl}/products/${id}/image`, {
+  const res = await authorizedFetch(`/products/${id}/image`, session, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${session.token}`,
-      'x-tenant-id': session.user.tenantId,
-    },
     body: form,
   });
   const json = await res.json().catch(() => null);

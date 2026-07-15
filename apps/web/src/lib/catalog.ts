@@ -80,7 +80,6 @@ export interface CheckoutData {
   categories: string[];
   /** Category tree (id, name, subcategories) for the POS category + subcategory filter. */
   categoryTree: CatalogCategory[];
-  customers: ClientCustomer[];
   settings: PosSettings;
   /** Re-fetch the catalog (e.g. after the API comes back up). */
   reload: () => void;
@@ -122,7 +121,6 @@ export function useCheckoutData(session: Session): CheckoutData {
     products: [],
     categories: [],
     categoryTree: [],
-    customers: [],
     settings: DEFAULT_SETTINGS,
   });
 
@@ -136,10 +134,9 @@ export function useCheckoutData(session: Session): CheckoutData {
 
     (async () => {
       try {
-        const [prod, cats, custs, settings] = await Promise.all([
+        const [prod, cats, settings] = await Promise.all([
           api.get<{ items: ApiProduct[] }>('/products?pageSize=200', auth),
           api.get<ApiCategory[]>('/categories', auth),
-          api.get<{ items: ClientCustomer[] }>('/customers?pageSize=200', auth),
           api.get<PosSettings>('/settings', auth),
         ]);
         if (cancelled) return;
@@ -164,7 +161,6 @@ export function useCheckoutData(session: Session): CheckoutData {
           products,
           categories: deriveCategories(products),
           categoryTree,
-          customers: custs.items,
           settings,
         });
       } catch (err) {
@@ -175,7 +171,6 @@ export function useCheckoutData(session: Session): CheckoutData {
           products: [],
           categories: [],
           categoryTree: [],
-          customers: [],
           settings: DEFAULT_SETTINGS,
         });
       }

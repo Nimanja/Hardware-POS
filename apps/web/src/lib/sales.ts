@@ -1,6 +1,6 @@
 import type { SaleReturnStatusCode } from '@hardware-pos/shared';
 
-import { api } from './api';
+import { api, authorizedFetch } from './api';
 import type { Session } from './auth';
 import type { DiscountType } from './cart';
 
@@ -249,6 +249,46 @@ function buildQuery(q: SalesQuery): string {
 /** Fetch a page of the sales history. */
 export async function fetchSales(session: Session, query: SalesQuery = {}): Promise<SalesPage> {
   return api.get<SalesPage>(`/sales?${buildQuery(query)}`, auth(session));
+}
+
+export type ReportFormat = 'pdf' | 'xlsx';
+
+/**
+ * Download a sales report (PDF or Excel) covering ALL sales that match the
+ * given filters — not just the currently visible page. Triggers a browser
+ * file download.
+ */
+export async function downloadSalesReport(
+  session: Session,
+  query: Omit<SalesQuery, 'page' | 'pageSize'>,
+  format: ReportFormat,
+): Promise<void> {
+  const params = new URLSearchParams();
+  params.set('format', format);
+  if (query.search) params.set('search', query.search);
+  if (query.paymentStatus) params.set('paymentStatus', query.paymentStatus);
+  if (query.syncStatus) params.set('syncStatus', query.syncStatus);
+  if (query.dateFrom) params.set('dateFrom', query.dateFrom);
+  if (query.dateTo) params.set('dateTo', query.dateTo);
+
+  const res = await authorizedFetch(`/sales/report?${params.toString()}`, session);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
+    const message = body?.message ?? `Export failed (HTTP ${res.status})`;
+    throw new Error(Array.isArray(message) ? message.join(', ') : message);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `sales-report.${format}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** Fetch a single sale with items and payments. */

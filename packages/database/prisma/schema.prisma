@@ -219,6 +219,7 @@ model Tenant {
   subcategories        ProductSubcategory[]
   quotations           Quotation[]
   quotationShareLogs   QuotationShareLog[]
+  refreshTokens        RefreshToken[]
 }
 
 model Branch {
@@ -295,6 +296,7 @@ model User {
   quotationsCreated  Quotation[]         @relation("QuotationCreatedBy")
   quotationRevisions QuotationRevision[] @relation("QuotationRevisionChangedBy")
   quotationShares    QuotationShareLog[] @relation("QuotationShareSentBy")
+  refreshTokens      RefreshToken[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -325,6 +327,23 @@ model Permission {
   createdAt   DateTime @default(now())
 
   roles Role[] @relation("RolePermissions")
+}
+
+/// Long-lived, rotating session tokens. Only the SHA-256 hash is stored; a
+/// row is dead once `revokedAt` is set or `expiresAt` has passed.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tenantId  String
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ─────────────────────────────────────────────────────────────

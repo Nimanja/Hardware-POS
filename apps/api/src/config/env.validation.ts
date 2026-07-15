@@ -37,6 +37,40 @@ export class EnvironmentVariables {
   @IsOptional()
   JWT_EXPIRES_IN = '12h';
 
+  /** Days a refresh token stays valid (rotated on every use). */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  REFRESH_TOKEN_TTL_DAYS = 30;
+
+  // ── Upload storage ──
+  /** Where uploaded files live: 'local' (API server disk) or 's3' (AWS/LocalStack). */
+  @IsIn(['local', 's3'])
+  @IsOptional()
+  STORAGE_PROVIDER = 'local';
+
+  @IsString()
+  @IsOptional()
+  S3_BUCKET?: string;
+
+  @IsString()
+  @IsOptional()
+  S3_REGION?: string;
+
+  /** Custom S3 endpoint (e.g. http://localhost:4566 for LocalStack). Omit for AWS. */
+  @IsString()
+  @IsOptional()
+  S3_ENDPOINT?: string;
+
+  @IsString()
+  @IsOptional()
+  S3_ACCESS_KEY_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  S3_SECRET_ACCESS_KEY?: string;
+
   // ── Sync queue worker ──
   // The background worker drains SyncJob rows. Disable ('false') in tests or when
   // a BullMQ/Redis worker takes over.

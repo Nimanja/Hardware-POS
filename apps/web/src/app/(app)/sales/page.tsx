@@ -7,50 +7,33 @@ import { Printer, ReceiptText, RefreshCw, Search } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { SyncBadge } from '@/components/quickbooks/sync-badge';
 import { SaleReturnStatusBadge } from '@/components/returns/status-badges';
+import {
+  DateRangeFilter,
+  resolveDateRange,
+  type DateRangeValue,
+} from '@/components/sales/date-range-filter';
+import { ExportMenu } from '@/components/sales/export-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Tooltip } from '@/components/ui/tooltip';
 import { useAuth } from '@/lib/auth';
 import { reprintCustomerReceipt } from '@/lib/receipt-print';
 import {
+  downloadSalesReport,
   fetchSales,
   retrySaleSync,
   type PaymentStatusCode,
+  type ReportFormat,
   type SaleListItem,
   type SalesQuery,
   type SyncStatusCode,
 } from '@/lib/sales';
 import { cn, formatMoney } from '@/lib/utils';
 
-type DatePreset = 'ALL' | 'TODAY' | 'WEEK' | 'MONTH';
-
-const DATE_PRESETS: { key: DatePreset; label: string }[] = [
-  { key: 'ALL', label: 'All time' },
-  { key: 'TODAY', label: 'Today' },
-  { key: 'WEEK', label: 'This week' },
-  { key: 'MONTH', label: 'This month' },
-];
-
 const PAGE_SIZES = [20, 30, 40, 50];
-
-function dateRangeFor(preset: DatePreset): { dateFrom?: string; dateTo?: string } {
-  if (preset === 'ALL') return {};
-  const now = new Date();
-  const start = new Date(now);
-  if (preset === 'TODAY') {
-    start.setHours(0, 0, 0, 0);
-  } else if (preset === 'WEEK') {
-    const day = (start.getDay() + 6) % 7; // Monday-based week
-    start.setDate(start.getDate() - day);
-    start.setHours(0, 0, 0, 0);
-  } else {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-  }
-  return { dateFrom: start.toISOString(), dateTo: now.toISOString() };
-}
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-LK', {
@@ -81,7 +64,7 @@ export default function SalesPage() {
 
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
-  const [preset, setPreset] = React.useState<DatePreset>('ALL');
+  const [dateRange, setDateRange] = React.useState<DateRangeValue>({ preset: 'ALL' });
   const [paymentStatus, setPaymentStatus] = React.useState<PaymentStatusCode | ''>('');
   const [syncStatus, setSyncStatus] = React.useState<SyncStatusCode | ''>('');
   const [page, setPage] = React.useState(1);
@@ -93,6 +76,7 @@ export default function SalesPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [reloadKey, setReloadKey] = React.useState(0);
+  const [exporting, setExporting] = React.useState<ReportFormat | null>(null);
 
   // Debounce the search box so we don't refetch on every keystroke.
   React.useEffect(() => {
@@ -103,22 +87,25 @@ export default function SalesPage() {
   // Reset to page 1 whenever a filter changes.
   React.useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, preset, paymentStatus, syncStatus, pageSize]);
+  }, [debouncedSearch, dateRange, paymentStatus, syncStatus, pageSize]);
+
+  /** The filters currently applied to the table (report exports reuse these). */
+  const filterQuery = React.useMemo<Omit<SalesQuery, 'page' | 'pageSize'>>(
+    () => ({
+      search: debouncedSearch || undefined,
+      paymentStatus: paymentStatus || undefined,
+      syncStatus: syncStatus || undefined,
+      ...resolveDateRange(dateRange),
+    }),
+    [debouncedSearch, paymentStatus, syncStatus, dateRange],
+  );
 
   React.useEffect(() => {
     if (!session) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const query: SalesQuery = {
-      page,
-      pageSize,
-      search: debouncedSearch || undefined,
-      paymentStatus: paymentStatus || undefined,
-      syncStatus: syncStatus || undefined,
-      ...dateRangeFor(preset),
-    };
-    fetchSales(session, query)
+    fetchSales(session, { page, pageSize, ...filterQuery })
       .then((res) => {
         if (cancelled) return;
         setRows(res.items);
@@ -136,7 +123,20 @@ export default function SalesPage() {
     return () => {
       cancelled = true;
     };
-  }, [session, page, pageSize, debouncedSearch, preset, paymentStatus, syncStatus, reloadKey]);
+  }, [session, page, pageSize, filterQuery, reloadKey]);
+
+  const handleExport = async (format: ReportFormat) => {
+    if (!session) return;
+    setExporting(format);
+    setError(null);
+    try {
+      await downloadSalesReport(session, filterQuery, format);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(null);
+    }
+  };
 
   const handleReprint = async (id: string) => {
     if (!session) return;
@@ -177,7 +177,7 @@ export default function SalesPage() {
         }
       />
 
-      {/* Filters */}
+      {/* Toolbar: filters on the left, report exports on the right. */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -188,6 +188,7 @@ export default function SalesPage() {
             className="pl-10"
           />
         </div>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
         <Select
           value={paymentStatus}
           onChange={(e) => setPaymentStatus(e.target.value as PaymentStatusCode | '')}
@@ -210,23 +211,15 @@ export default function SalesPage() {
           <option value="FAILED">Failed</option>
           <option value="NOT_SYNCED">Not synced</option>
         </Select>
-      </div>
 
-      <div className="flex flex-wrap gap-2">
-        {DATE_PRESETS.map((p) => (
-          <button
-            key={p.key}
-            onClick={() => setPreset(p.key)}
-            className={cn(
-              'rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-              preset === p.key
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-border',
-            )}
-          >
-            {p.label}
-          </button>
-        ))}
+        {/* Report export — covers every sale matching the current filters. */}
+        <div className="ml-auto">
+          <ExportMenu
+            disabled={loading || total === 0}
+            exporting={exporting}
+            onExport={(format) => void handleExport(format)}
+          />
+        </div>
       </div>
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
@@ -314,29 +307,33 @@ export default function SalesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          aria-label="Reprint receipt"
-                          disabled={busyId === s.id}
-                          onClick={() => handleReprint(s.id)}
-                        >
-                          <Printer className="h-4 w-4" />
-                        </Button>
-                        {s.syncStatus === 'FAILED' || s.syncStatus === 'PENDING' ? (
+                        <Tooltip label="Reprint receipt">
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            aria-label="Retry QuickBooks sync"
+                            aria-label="Reprint receipt"
                             disabled={busyId === s.id}
-                            onClick={() => handleRetry(s.id)}
+                            onClick={() => handleReprint(s.id)}
                           >
-                            <RefreshCw
-                              className={cn('h-4 w-4', busyId === s.id && 'animate-spin')}
-                            />
+                            <Printer className="h-4 w-4" />
                           </Button>
+                        </Tooltip>
+                        {s.syncStatus === 'FAILED' || s.syncStatus === 'PENDING' ? (
+                          <Tooltip label="Retry QuickBooks sync">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label="Retry QuickBooks sync"
+                              disabled={busyId === s.id}
+                              onClick={() => handleRetry(s.id)}
+                            >
+                              <RefreshCw
+                                className={cn('h-4 w-4', busyId === s.id && 'animate-spin')}
+                              />
+                            </Button>
+                          </Tooltip>
                         ) : null}
                       </div>
                     </td>
