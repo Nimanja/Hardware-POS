@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import * as React from 'react';
-import { FileDown, FileSpreadsheet, Printer, ReceiptText, RefreshCw, Search } from 'lucide-react';
+import { Printer, ReceiptText, RefreshCw, Search } from 'lucide-react';
 
 import { PageHeader } from '@/components/page-header';
 import { SyncBadge } from '@/components/quickbooks/sync-badge';
@@ -11,6 +11,7 @@ import {
   resolveDateRange,
   type DateRangeValue,
 } from '@/components/sales/date-range-filter';
+import { ExportMenu } from '@/components/sales/export-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -209,26 +210,13 @@ export default function SalesPage() {
           <option value="NOT_SYNCED">Not synced</option>
         </Select>
 
-        {/* Report exports — cover every sale matching the current filters. */}
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={loading || total === 0 || exporting !== null}
-            onClick={() => void handleExport('pdf')}
-          >
-            <FileDown className="h-4 w-4" />
-            {exporting === 'pdf' ? 'Exporting…' : 'Export PDF'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={loading || total === 0 || exporting !== null}
-            onClick={() => void handleExport('xlsx')}
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            {exporting === 'xlsx' ? 'Exporting…' : 'Export Excel'}
-          </Button>
+        {/* Report export — covers every sale matching the current filters. */}
+        <div className="ml-auto">
+          <ExportMenu
+            disabled={loading || total === 0}
+            exporting={exporting}
+            onExport={(format) => void handleExport(format)}
+          />
         </div>
       </div>
 
