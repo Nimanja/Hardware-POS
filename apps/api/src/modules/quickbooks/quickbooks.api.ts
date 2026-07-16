@@ -42,6 +42,21 @@ export interface QboSalesDocumentInput {
   TxnTaxDetail?: { TotalTax: number };
 }
 
+/**
+ * Body shared by RefundReceipt and CreditMemo creation. Same line/tax shape as a
+ * sales document; a RefundReceipt additionally names the account the money is
+ * paid back from (DepositToAccountRef) and the refund tender (PaymentMethodRef).
+ */
+export interface QboReturnDocumentInput {
+  CustomerRef?: QboRef;
+  DocNumber?: string;
+  PrivateNote?: string;
+  Line: QboSalesLine[];
+  TxnTaxDetail?: { TotalTax: number };
+  DepositToAccountRef?: QboRef;
+  PaymentMethodRef?: QboRef;
+}
+
 /** Body for a QuickBooks Payment linked to an Invoice. */
 export interface QboPaymentInput {
   CustomerRef: QboRef;
@@ -121,10 +136,28 @@ export async function createPayment(
   return expectEntity(json.Payment, 'Payment');
 }
 
+/** Create a QuickBooks Refund Receipt (money paid back for a fully-paid sale). */
+export async function createRefundReceipt(
+  params: RequestParams,
+  body: QboReturnDocumentInput,
+): Promise<QboDocument> {
+  const json = await postEntity<{ RefundReceipt?: QboDocument }>(params, 'refundreceipt', body);
+  return expectEntity(json.RefundReceipt, 'RefundReceipt');
+}
+
+/** Create a QuickBooks Credit Memo (credit for a returned invoice / credit sale). */
+export async function createCreditMemo(
+  params: RequestParams,
+  body: QboReturnDocumentInput,
+): Promise<QboDocument> {
+  const json = await postEntity<{ CreditMemo?: QboDocument }>(params, 'creditmemo', body);
+  return expectEntity(json.CreditMemo, 'CreditMemo');
+}
+
 /** POST a JSON entity to the Accounting API and return the parsed response. */
 async function postEntity<T>(
   params: RequestParams,
-  entity: 'salesreceipt' | 'invoice' | 'payment',
+  entity: 'salesreceipt' | 'invoice' | 'payment' | 'refundreceipt' | 'creditmemo',
   body: unknown,
 ): Promise<T> {
   const url = `${params.apiBase}/v3/company/${params.realmId}/${entity}?minorversion=65`;

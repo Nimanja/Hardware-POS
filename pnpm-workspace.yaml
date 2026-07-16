@@ -1,3 +1,16 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Dependencies allowed to run install/build scripts (pnpm 10+). Puppeteer's
+# postinstall downloads Chromium so server-side PDF generation works out of the
+# box; if you'd rather use an existing browser, set PUPPETEER_EXECUTABLE_PATH
+# instead and Puppeteer's download can be skipped.
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - esbuild
+  - prisma
+  - puppeteer
+  - sharp
+  - unrs-resolver

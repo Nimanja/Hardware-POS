@@ -8,14 +8,18 @@ import {
   Minus,
   NotebookPen,
   Plus,
+  ScanLine,
   Search,
   ShieldCheck,
+  ShoppingCart,
   Tag,
   Trash2,
   UserPlus,
   Warehouse,
+  X,
 } from 'lucide-react';
 
+import { CustomerCombobox } from '@/components/pos/customer-combobox';
 import { ItemDiscountDialog } from '@/components/pos/item-discount-dialog';
 import { ItemNoteDialog } from '@/components/pos/item-note-dialog';
 import { ManagerApprovalDialog } from '@/components/pos/manager-approval-dialog';
@@ -23,7 +27,7 @@ import { OrderDiscountDialog } from '@/components/pos/order-discount-dialog';
 import { QuickAddCustomerDialog } from '@/components/pos/quick-add-customer-dialog';
 import { ProductImage } from '@/components/product-image';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
@@ -35,6 +39,8 @@ import { usePosCart } from '@/lib/pos-cart';
 import { cn, formatMoney, round2 } from '@/lib/utils';
 
 const PAGE_SIZES = [20, 30, 40, 50];
+/** Below this on-hand count (but above zero) a card shows a "Low" badge. */
+const LOW_STOCK_THRESHOLD = 5;
 
 interface PendingLineApproval {
   productId: string;
@@ -51,6 +57,7 @@ export default function PosPage() {
 
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('All');
+  const [subcategory, setSubcategory] = React.useState('All');
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(20);
   const [noteFor, setNoteFor] = React.useState<string | null>(null);
@@ -63,30 +70,46 @@ export default function PosPage() {
   } | null>(null);
   const [quickAddOpen, setQuickAddOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
+  // Portrait / phone: the cart lives in a slide-up sheet instead of a fixed column.
+  const [cartOpen, setCartOpen] = React.useState(false);
+  const searchRef = React.useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2400);
   };
 
+  // Keep the cart's product snapshots aligned with each fresh catalog load,
+  // so stock warnings reflect sales made on other registers.
+  React.useEffect(() => {
+    if (!data.loading && !data.error) cart.refreshProducts(data.products);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.products, data.loading, data.error]);
+
   // ── catalog filtering + pagination ─────────────────────────────────────────
   const categories = ['All', ...data.categories];
+  const activeCategory = data.categoryTree.find((c) => c.name === category);
+  const subcategories =
+    category !== 'All' && activeCategory && activeCategory.subcategories.length > 0
+      ? ['All', ...activeCategory.subcategories.map((s) => s.name)]
+      : [];
   const q = query.trim().toLowerCase();
   const filtered = React.useMemo(
     () =>
       data.products.filter((p) => {
         const matchesCat = category === 'All' || p.categoryName === category;
+        const matchesSub = subcategory === 'All' || p.subcategoryName === subcategory;
         const matchesQuery =
           !q ||
           p.name.toLowerCase().includes(q) ||
           (p.sku ?? '').toLowerCase().includes(q) ||
           (p.barcode ?? '').toLowerCase().includes(q);
-        return matchesCat && matchesQuery;
+        return matchesCat && matchesSub && matchesQuery;
       }),
-    [data.products, category, q],
+    [data.products, category, subcategory, q],
   );
 
-  React.useEffect(() => setPage(1), [q, category, pageSize]);
+  React.useEffect(() => setPage(1), [q, category, subcategory, pageSize]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageProducts = filtered.slice((page - 1) * pageSize, page * pageSize);
 
@@ -184,101 +207,435 @@ export default function PosPage() {
     return res.reason ?? 'Not approved';
   };
 
-  const allCustomers = React.useMemo(
-    () => [...cart.addedCustomers, ...data.customers],
-    [cart.addedCustomers, data.customers],
-  );
+  // Every picked customer passes through cart.addCustomer, so the name of the
+  // current selection is always resolvable from the cart's own list.
+  const selectedCustomerName =
+    cart.addedCustomers.find((c) => c.id === cart.customerId)?.name ?? null;
 
   const noteItem = cart.items.find((it) => it.product.id === noteFor);
   const discountItem = cart.items.find((it) => it.product.id === discountFor);
   const approvalItem = cart.items.find((it) => it.product.id === pendingApproval?.productId);
 
   const currency = data.settings.currency;
+  const cartEmpty = cart.items.length === 0;
+  const canPay = !cartEmpty && !totals.hasStockIssue;
 
-  return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
-      {/* ── Catalog ─────────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={onSearchKeyDown}
-              placeholder="Search products or scan barcode…"
-              className="pl-10"
-            />
+  const goToPayment = () => {
+    setCartOpen(false);
+    router.push('/pos/payment');
+  };
+
+  // ── cart panel ───────────────────────────────────────────────────────────
+  // Rendered in two homes: the fixed right column (lg+) and the portrait/phone
+  // slide-up sheet. Kept as a function (not a nested component) so both homes
+  // stay in the DOM without remounting the customer picker on every render.
+  const renderCartPanel = (inSheet: boolean) => (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Header — never scrolls */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <ShoppingCart className="h-4 w-4 text-primary" />
+          Cart
+          {totals.itemCount > 0 ? (
+            <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">
+              {totals.itemCount} item{totals.itemCount > 1 ? 's' : ''}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-1">
+          {!cartEmpty ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-danger hover:bg-danger-soft hover:text-danger"
+              onClick={() => {
+                if (window.confirm('Clear all items from the cart?')) cart.clearCart();
+              }}
+            >
+              Clear
+            </Button>
+          ) : null}
+          {inSheet ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              aria-label="Close cart"
+              onClick={() => setCartOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Customer — never scrolls */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
+        <CustomerCombobox
+          session={session!}
+          customerId={cart.customerId}
+          customerName={selectedCustomerName}
+          onSelect={(customer) => (customer ? cart.addCustomer(customer) : cart.setCustomerId(''))}
+        />
+        {canAddCustomer ? (
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Add customer"
+            onClick={() => setQuickAddOpen(true)}
+          >
+            <UserPlus className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
+
+      {/* Items — the only scroll region inside the cart */}
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
+        {cartEmpty ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 py-10 text-center text-sm text-muted-foreground">
+            <ShoppingCart className="h-8 w-8 text-muted-foreground/40" />
+            Tap a product to add it to the cart.
           </div>
+        ) : (
+          cart.items.map((item) => {
+            const line = computeLine(item);
+            return (
+              <div
+                key={item.product.id}
+                className="rounded-xl border border-border bg-card p-2.5"
+              >
+                <div className="flex items-start gap-2.5">
+                  <ProductImage
+                    src={item.product.imageUrl}
+                    alt={item.product.name}
+                    className="h-11 w-11 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="line-clamp-2 text-sm font-medium leading-tight">
+                      {item.product.name}
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {item.product.sku ?? item.product.barcode ?? '—'} ·{' '}
+                      {formatMoney(item.product.unitPrice, currency)}
+                      {item.product.unitType ? `/${item.product.unitType}` : ''}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold">
+                      {formatMoney(line.lineTotal, currency)}
+                    </div>
+                    {line.discountAmount > 0 ? (
+                      <div className="flex items-center justify-end gap-1 text-[11px] font-medium text-success">
+                        {item.approvalToken ? (
+                          <ShieldCheck className="h-3 w-3" aria-label="Manager approved" />
+                        ) : null}
+                        -{formatMoney(line.discountAmount, currency)}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {line.outOfStock ? (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-danger">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Only {item.product.quantityOnHand} in stock
+                  </div>
+                ) : null}
+
+                {item.note ? (
+                  <div className="mt-2 rounded-lg bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
+                    {item.note}
+                  </div>
+                ) : null}
+
+                <div className="mt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      aria-label="Decrease quantity"
+                      onClick={() => cart.changeQty(item.product.id, -1)}
+                    >
+                      <Minus className="h-4 w-4" />
+                    </Button>
+                    <span className="w-9 text-center text-sm font-semibold tabular-nums">
+                      {item.quantity}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      aria-label="Increase quantity"
+                      onClick={() => cart.changeQty(item.product.id, 1)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn('h-9 w-9', item.note && 'text-primary')}
+                      onClick={() => setNoteFor(item.product.id)}
+                      aria-label="Add note"
+                    >
+                      <NotebookPen className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn('h-9 w-9', item.discount && 'text-primary')}
+                      onClick={() => setDiscountFor(item.product.id)}
+                      aria-label="Add product discount"
+                    >
+                      <Tag className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-danger"
+                      aria-label="Remove item"
+                      onClick={() => cart.removeItem(item.product.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Summary + payment — never scrolls, always visible */}
+      <div className="shrink-0 space-y-2 border-t border-border bg-surface px-4 py-3 text-sm">
+        <Row label="Subtotal" value={formatMoney(totals.subtotal, currency)} />
+        {totals.totalDiscount > 0 ? (
+          <Row
+            label="Product discount"
+            value={`-${formatMoney(totals.totalDiscount, currency)}`}
+            accent="success"
+          />
+        ) : null}
+        <button
+          type="button"
+          disabled={cartEmpty}
+          onClick={() => setOrderDiscountOpen(true)}
+          className={cn(
+            'flex w-full items-center rounded-xl border px-3 py-2 text-sm font-medium transition-colors',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            cart.orderDiscount
+              ? 'justify-between border-border bg-muted/40 hover:border-primary'
+              : 'justify-center gap-1.5 border-dashed border-primary/50 text-primary hover:bg-brand-50',
+          )}
+        >
+          {cart.orderDiscount ? (
+            <>
+              <span className="inline-flex items-center gap-1.5">
+                <Tag className="h-4 w-4" />
+                Order discount
+                {cart.orderApprovalToken ? (
+                  <ShieldCheck className="h-4 w-4 text-success" aria-label="Manager approved" />
+                ) : null}
+              </span>
+              <span className="font-semibold text-success">
+                -{formatMoney(totals.orderDiscountAmount, currency)}
+              </span>
+            </>
+          ) : (
+            <>
+              <Tag className="h-4 w-4" />
+              Add order discount
+            </>
+          )}
+        </button>
+        <Row
+          label={`Tax (${data.settings.taxRatePercent}%)`}
+          value={formatMoney(totals.taxAmount, currency)}
+        />
+        <div className="flex items-center justify-between border-t border-border pt-2 text-base font-semibold">
+          <span>Total</span>
+          <span className="tabular-nums">{formatMoney(totals.total, currency)}</span>
         </div>
 
-        {data.error ? (
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger">
-            <span className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              Couldn&apos;t load the product catalog: {data.error}
-            </span>
-            <Button variant="outline" size="sm" onClick={data.reload}>
-              Retry
-            </Button>
+        {totals.hasStockIssue ? (
+          <div className="flex items-center gap-1.5 rounded-lg bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Some items exceed available stock.
           </div>
         ) : null}
 
-        <div className="flex flex-wrap gap-2">
-          {categories.map((c) => (
-            <button
-              key={c}
-              onClick={() => setCategory(c)}
-              className={cn(
-                'rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                category === c
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:bg-border',
-              )}
+        <Button
+          size="lg"
+          className="mt-1 h-14 w-full text-base"
+          disabled={!canPay}
+          onClick={goToPayment}
+        >
+          Continue to Payment · {formatMoney(totals.total, currency)}
+          <ArrowRight className="h-5 w-5" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3 lg:grid lg:grid-cols-[1.7fr_1fr] lg:gap-4 xl:grid-cols-[1.85fr_1fr] 2xl:grid-cols-[2fr_1fr]">
+      {/* ── Catalog ─────────────────────────────────────────────── */}
+      {/* min-w-0 lets this grid/flex child shrink below its content width so
+          the product grid never blows out the track and steals the cart's
+          column (the classic CSS grid `min-width:auto` overflow trap). */}
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col lg:min-h-0">
+        {/* Sticky control bar — search, scan, categories. Never scrolls. */}
+        <div className="shrink-0 space-y-2.5 pb-2.5">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onSearchKeyDown}
+                placeholder="Search or scan barcode…"
+                className="h-11 pl-10 pr-9"
+                aria-label="Search products or scan barcode"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setQuery('');
+                    searchRef.current?.focus();
+                  }}
+                  className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 shrink-0"
+              aria-label="Scan barcode"
+              onClick={() => searchRef.current?.focus()}
             >
-              {c}
-            </button>
-          ))}
+              <ScanLine className="h-5 w-5" />
+            </Button>
+          </div>
+
+          {data.error ? (
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger">
+              <span className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Couldn&apos;t load the product catalog: {data.error}
+              </span>
+              <Button variant="outline" size="sm" onClick={data.reload}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
+
+          {/* Single-line, horizontally scrollable filter rows: the vertical
+              footprint stays constant no matter how many categories exist. */}
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+            {categories.map((c) => (
+              <button
+                key={c}
+                onClick={() => {
+                  setCategory(c);
+                  setSubcategory('All');
+                }}
+                className={cn(
+                  'h-9 shrink-0 whitespace-nowrap rounded-full px-3.5 text-sm font-medium transition-colors',
+                  category === c
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-border',
+                )}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+
+          {subcategories.length > 0 ? (
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+              {subcategories.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSubcategory(s)}
+                  className={cn(
+                    'h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-xs font-medium transition-colors',
+                    subcategory === s
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-border',
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
-        {data.loading ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">Loading products…</p>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        {/* Independent product scroll region */}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-2 pr-0.5 [scrollbar-width:thin]">
+          {data.loading ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">Loading products…</p>
+          ) : filtered.length === 0 ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              No products match your search.
+            </p>
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(8.25rem,1fr))] gap-2.5">
               {pageProducts.map((p) => {
                 const outOfStock = p.quantityOnHand <= 0;
+                const lowStock = !outOfStock && p.quantityOnHand <= LOW_STOCK_THRESHOLD;
                 return (
                   <button
                     key={p.id}
                     onClick={() => addToCart(p)}
                     disabled={outOfStock}
-                    className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:border-primary hover:shadow disabled:opacity-60"
+                    title={p.name}
+                    className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:border-primary hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <div className="relative">
                       <ProductImage
                         src={p.imageUrl}
                         alt={p.name}
                         rounded="rounded-none"
-                        className="aspect-square w-full border-0"
+                        className="aspect-[4/3] w-full border-0"
                       />
                       {p.requiresWarehousePickup ? (
-                        <span className="absolute left-1.5 top-1.5 rounded-md bg-warning-soft/90 p-1 text-warning">
+                        <span
+                          className="absolute left-1.5 top-1.5 rounded-md bg-warning-soft/90 p-1 text-warning"
+                          title="Warehouse pickup"
+                        >
                           <Warehouse className="h-3.5 w-3.5" />
                         </span>
                       ) : null}
-                      <span className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground opacity-0 shadow transition-opacity group-hover:opacity-100">
+                      {outOfStock ? (
+                        <span className="absolute right-1.5 top-1.5 rounded-md bg-danger px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                          Out
+                        </span>
+                      ) : lowStock ? (
+                        <span className="absolute right-1.5 top-1.5 rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                          Low
+                        </span>
+                      ) : null}
+                      <span className="absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow transition-opacity group-hover:opacity-100 group-disabled:hidden md:opacity-0">
                         <Plus className="h-4 w-4" />
                       </span>
                     </div>
-                    <div className="flex flex-1 flex-col p-2.5">
+                    <div className="flex flex-1 flex-col p-2">
                       <div className="line-clamp-2 min-h-8 text-xs font-medium leading-tight">
                         {p.name}
                       </div>
                       <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
                         {p.sku ?? p.barcode ?? ''}
                       </div>
-                      <div className="mt-1.5 flex items-end justify-between">
+                      <div className="mt-1.5 flex items-end justify-between gap-1">
                         <span className="text-sm font-semibold text-primary">
                           {formatMoney(p.unitPrice, currency)}
                         </span>
@@ -288,268 +645,110 @@ export default function PosPage() {
                             outOfStock ? 'font-medium text-danger' : 'text-muted-foreground',
                           )}
                         >
-                          {outOfStock ? 'Out' : `${p.quantityOnHand}${p.unitType ? ' ' + p.unitType : ''}`}
+                          {outOfStock
+                            ? 'Out'
+                            : `${p.quantityOnHand}${p.unitType ? ' ' + p.unitType : ''}`}
                         </span>
                       </div>
                     </div>
                   </button>
                 );
               })}
-              {filtered.length === 0 ? (
-                <p className="col-span-full py-16 text-center text-sm text-muted-foreground">
-                  No products match your search.
-                </p>
-              ) : null}
             </div>
-
-            {/* Pagination */}
-            {filtered.length > 0 ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <span>Per page</span>
-                  <Select
-                    value={String(pageSize)}
-                    onChange={(e) => setPageSize(Number(e.target.value))}
-                    className="w-auto"
-                  >
-                    {PAGE_SIZES.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </Select>
-                  <span className="hidden sm:inline">
-                    Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} of{' '}
-                    {filtered.length}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Prev
-                  </Button>
-                  <span className="px-2 text-muted-foreground">
-                    {page} / {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </>
-        )}
-      </div>
-
-      {/* ── Cart ────────────────────────────────────────────────── */}
-      <Card className="flex h-fit flex-col lg:sticky lg:top-6">
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <div className="text-sm font-semibold">
-            Cart{totals.itemCount > 0 ? ` · ${totals.itemCount} item${totals.itemCount > 1 ? 's' : ''}` : ''}
-          </div>
-          {cart.items.length > 0 ? (
-            <button
-              onClick={cart.clearCart}
-              className="text-xs font-medium text-danger hover:underline"
-            >
-              Clear cart
-            </button>
-          ) : null}
+          )}
         </div>
 
-        <div className="space-y-3 border-b border-border p-4">
-          <div className="flex items-center gap-2">
-            <Select
-              value={cart.customerId}
-              onChange={(e) => cart.setCustomerId(e.target.value)}
-              className="flex-1"
-            >
-              <option value="">Walk-in customer</option>
-              {allCustomers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-            {canAddCustomer ? (
+        {/* Pagination footer — stays pinned below the scroll region */}
+        {!data.loading && filtered.length > 0 ? (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border pt-2.5 text-sm">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span className="hidden sm:inline">Per page</span>
+              <Select
+                value={String(pageSize)}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="w-auto"
+                aria-label="Products per page"
+              >
+                {PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </Select>
+              <span className="hidden md:inline">
+                {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} of{' '}
+                {filtered.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline"
-                size="icon"
-                aria-label="Add customer"
-                onClick={() => setQuickAddOpen(true)}
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
-                <UserPlus className="h-4 w-4" />
+                Prev
               </Button>
-            ) : null}
-          </div>
-        </div>
-
-        <CardContent className="max-h-[42vh] space-y-3 overflow-auto p-4">
-          {cart.items.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              Tap a product to add it to the cart.
-            </p>
-          ) : (
-            cart.items.map((item) => {
-              const line = computeLine(item);
-              return (
-                <div key={item.product.id} className="rounded-xl border border-border p-3">
-                  <div className="flex items-start gap-2.5">
-                    <ProductImage
-                      src={item.product.imageUrl}
-                      alt={item.product.name}
-                      className="h-10 w-10 shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{item.product.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatMoney(item.product.unitPrice, currency)} each
-                      </div>
-                    </div>
-                    <div className="text-right text-sm font-semibold">
-                      {formatMoney(line.lineTotal, currency)}
-                      {line.discountAmount > 0 ? (
-                        <div className="flex items-center justify-end gap-1 text-xs font-normal text-success">
-                          {item.approvalToken ? (
-                            <ShieldCheck className="h-3 w-3" aria-label="Manager approved" />
-                          ) : null}
-                          -{formatMoney(line.discountAmount, currency)}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {line.outOfStock ? (
-                    <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-danger">
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                      Only {item.product.quantityOnHand} in stock
-                    </div>
-                  ) : null}
-
-                  {item.note ? (
-                    <div className="mt-2 rounded-lg bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
-                      {item.note}
-                    </div>
-                  ) : null}
-
-                  <div className="mt-2.5 flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => cart.changeQty(item.product.id, -1)}
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </Button>
-                      <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => cart.changeQty(item.product.id, 1)}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn('h-8 w-8', item.note && 'text-primary')}
-                        onClick={() => setNoteFor(item.product.id)}
-                        aria-label="Add note"
-                      >
-                        <NotebookPen className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn('h-8 w-8', item.discount && 'text-primary')}
-                        onClick={() => setDiscountFor(item.product.id)}
-                        aria-label="Add discount"
-                      >
-                        <Tag className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-danger"
-                        onClick={() => cart.removeItem(item.product.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </CardContent>
-
-        <div className="space-y-2 border-t border-border p-4 text-sm">
-          <Row label="Subtotal" value={formatMoney(totals.subtotal, currency)} />
-          <Row label="Product discount" value={`-${formatMoney(totals.totalDiscount, currency)}`} />
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              disabled={cart.items.length === 0}
-              onClick={() => setOrderDiscountOpen(true)}
-              className={cn(
-                'inline-flex items-center gap-1.5 transition-colors disabled:opacity-50',
-                cart.orderDiscount ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Tag className="h-3.5 w-3.5" />
-              Order discount
-              {cart.orderApprovalToken ? (
-                <ShieldCheck className="h-3.5 w-3.5" aria-label="Manager approved" />
-              ) : null}
-            </button>
-            {cart.orderDiscount ? (
-              <span className="font-medium text-success">
-                -{formatMoney(totals.orderDiscountAmount, currency)}
+              <span className="px-2 tabular-nums text-muted-foreground">
+                {page} / {totalPages}
               </span>
-            ) : (
-              <span className="text-muted-foreground">Add</span>
-            )}
-          </div>
-          <Row
-            label={`Tax (${data.settings.taxRatePercent}%)`}
-            value={formatMoney(totals.taxAmount, currency)}
-          />
-          <div className="flex items-center justify-between border-t border-border pt-2 text-base font-semibold">
-            <span>Total</span>
-            <span>{formatMoney(totals.total, currency)}</span>
-          </div>
-
-          {totals.hasStockIssue ? (
-            <div className="flex items-center gap-1.5 rounded-lg bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              Some items exceed available stock.
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
             </div>
-          ) : null}
+          </div>
+        ) : null}
+      </section>
 
-          <Button
-            size="lg"
-            className="mt-1 w-full"
-            disabled={cart.items.length === 0 || totals.hasStockIssue}
-            onClick={() => router.push('/pos/payment')}
-          >
-            Continue to Payment
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+      {/* ── Fixed cart column (landscape tablet + desktop) ───────── */}
+      <aside className="hidden min-h-0 min-w-0 lg:flex">
+        <Card className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+          {renderCartPanel(false)}
+        </Card>
+      </aside>
+
+      {/* ── Portrait / phone: persistent cart bar + slide-up sheet ─ */}
+      <div className="shrink-0 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setCartOpen(true)}
+          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm active:bg-muted"
+        >
+          <span className="flex items-center gap-2.5 text-sm font-semibold">
+            <span className="relative">
+              <ShoppingCart className="h-5 w-5 text-primary" />
+              {totals.itemCount > 0 ? (
+                <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                  {totals.itemCount}
+                </span>
+              ) : null}
+            </span>
+            {cartEmpty ? 'Cart is empty' : `View cart · ${totals.itemCount} item${totals.itemCount > 1 ? 's' : ''}`}
+          </span>
+          <span className="text-base font-semibold tabular-nums">
+            {formatMoney(totals.total, currency)}
+          </span>
+        </button>
+      </div>
+
+      {cartOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Cart">
+          <button
+            type="button"
+            aria-label="Close cart"
+            onClick={() => setCartOpen(false)}
+            className="absolute inset-0 bg-slate-900/40"
+          />
+          <div className="absolute inset-x-0 bottom-0 flex h-[88dvh] flex-col overflow-hidden rounded-t-2xl bg-surface pb-[env(safe-area-inset-bottom)] shadow-2xl">
+            {renderCartPanel(true)}
+          </div>
         </div>
-      </Card>
+      ) : null}
 
       {/* ── Dialogs ─────────────────────────────────────────────── */}
       {noteItem ? (
@@ -631,7 +830,7 @@ export default function PosPage() {
       ) : null}
 
       {toast ? (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-foreground px-4 py-2.5 text-sm text-white shadow-lg">
+        <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl bg-foreground px-4 py-2.5 text-sm text-white shadow-lg">
           {toast}
         </div>
       ) : null}
@@ -639,11 +838,21 @@ export default function PosPage() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: 'success';
+}) {
   return (
     <div className="flex items-center justify-between text-muted-foreground">
       <span>{label}</span>
-      <span className="text-foreground">{value}</span>
+      <span className={cn('tabular-nums', accent === 'success' ? 'text-success' : 'text-foreground')}>
+        {value}
+      </span>
     </div>
   );
 }

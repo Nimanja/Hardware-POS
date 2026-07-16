@@ -3,6 +3,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   QuickBooksDocumentType,
+  SaleReturnStatus,
   SaleStatus,
   SyncStatus,
 } from '@hardware-pos/database';
@@ -26,6 +27,8 @@ export interface SaleListItem {
   balanceAmount: number;
   paymentStatus: PaymentStatus;
   paymentMethods: PaymentMethod[];
+  returnStatus: SaleReturnStatus;
+  returnedAmount: number;
   quickbooksDocumentType: QuickBooksDocumentType | null;
   syncStatus: SyncStatus;
 }

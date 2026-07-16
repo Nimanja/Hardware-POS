@@ -21,6 +21,10 @@ export class SearchProductsDto extends PaginationQueryDto {
   @IsOptional()
   categoryId?: string;
 
+  @IsString()
+  @IsOptional()
+  subcategoryId?: string;
+
   @Transform(({ value }) =>
     value === undefined ? undefined : value === true || value === 'true',
   )

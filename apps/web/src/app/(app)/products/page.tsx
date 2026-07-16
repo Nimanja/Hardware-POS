@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import * as React from 'react';
-import { Ban, PackagePlus, Pencil, RotateCcw, Search, Warehouse } from 'lucide-react';
+import { Ban, FolderTree, PackagePlus, Pencil, RotateCcw, Search, Warehouse } from 'lucide-react';
 
 import { PageHeader } from '@/components/page-header';
 import { ProductImage } from '@/components/product-image';
@@ -12,14 +12,15 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Tooltip } from '@/components/ui/tooltip';
 import { useAuth } from '@/lib/auth';
 import { Permission } from '@/lib/permissions';
 import {
   deactivateProduct,
-  fetchCategories,
+  fetchCategoryTree,
   fetchProducts,
   setProductActive,
-  type Category,
+  type CategoryNode,
   type ManagedProduct,
   type ProductsQuery,
   type ProductSyncStatus,
@@ -39,13 +40,14 @@ export default function ProductsPage() {
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [categoryId, setCategoryId] = React.useState('');
+  const [subcategoryId, setSubcategoryId] = React.useState('');
   const [stockStatus, setStockStatus] = React.useState<'' | 'IN' | 'OUT'>('');
   const [active, setActive] = React.useState<'' | 'true' | 'false'>('true');
   const [syncStatus, setSyncStatus] = React.useState<'' | ProductSyncStatus>('');
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(20);
 
-  const [categories, setCategories] = React.useState<Category[]>([]);
+  const [categories, setCategories] = React.useState<CategoryNode[]>([]);
   const [rows, setRows] = React.useState<ManagedProduct[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
@@ -60,11 +62,11 @@ export default function ProductsPage() {
 
   React.useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, categoryId, stockStatus, active, syncStatus, pageSize]);
+  }, [debouncedSearch, categoryId, subcategoryId, stockStatus, active, syncStatus, pageSize]);
 
   React.useEffect(() => {
     if (!session) return;
-    fetchCategories(session).then(setCategories).catch(() => setCategories([]));
+    fetchCategoryTree(session).then(setCategories).catch(() => setCategories([]));
   }, [session]);
 
   React.useEffect(() => {
@@ -77,6 +79,7 @@ export default function ProductsPage() {
       pageSize,
       search: debouncedSearch || undefined,
       categoryId: categoryId || undefined,
+      subcategoryId: subcategoryId || undefined,
       stockStatus: stockStatus || undefined,
       isActive: active || undefined,
       syncStatus: syncStatus || undefined,
@@ -97,7 +100,7 @@ export default function ProductsPage() {
     return () => {
       cancelled = true;
     };
-  }, [session, page, pageSize, debouncedSearch, categoryId, stockStatus, active, syncStatus, reloadKey]);
+  }, [session, page, pageSize, debouncedSearch, categoryId, subcategoryId, stockStatus, active, syncStatus, reloadKey]);
 
   const toggleActive = async (p: ManagedProduct) => {
     if (!session) return;
@@ -114,6 +117,9 @@ export default function ProductsPage() {
   };
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const subcategoryOptions = categoryId
+    ? (categories.find((c) => c.id === categoryId)?.subcategories ?? [])
+    : [];
 
   return (
     <div className="space-y-6">
@@ -121,12 +127,18 @@ export default function ProductsPage() {
         title="Products"
         description="Manage the product catalog. QuickBooks remains the inventory master."
         actions={
-          canManage ? (
-            <Link href="/products/new" className={buttonVariants()}>
-              <PackagePlus className="h-4 w-4" />
-              Add product
+          <div className="flex items-center gap-2">
+            <Link href="/products/categories" className={buttonVariants({ variant: 'outline' })}>
+              <FolderTree className="h-4 w-4" />
+              Categories
             </Link>
-          ) : undefined
+            {canManage ? (
+              <Link href="/products/new" className={buttonVariants()}>
+                <PackagePlus className="h-4 w-4" />
+                Add product
+              </Link>
+            ) : null}
+          </div>
         }
       />
 
@@ -141,7 +153,14 @@ export default function ProductsPage() {
             className="pl-10"
           />
         </div>
-        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-auto">
+        <Select
+          value={categoryId}
+          onChange={(e) => {
+            setCategoryId(e.target.value);
+            setSubcategoryId('');
+          }}
+          className="w-auto"
+        >
           <option value="">All categories</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
@@ -149,6 +168,20 @@ export default function ProductsPage() {
             </option>
           ))}
         </Select>
+        {subcategoryOptions.length > 0 ? (
+          <Select
+            value={subcategoryId}
+            onChange={(e) => setSubcategoryId(e.target.value)}
+            className="w-auto"
+          >
+            <option value="">All subcategories</option>
+            {subcategoryOptions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+        ) : null}
         <Select
           value={stockStatus}
           onChange={(e) => setStockStatus(e.target.value as '' | 'IN' | 'OUT')}
@@ -261,27 +294,31 @@ export default function ProductsPage() {
                       <div className="flex items-center justify-end gap-1">
                         {canManage ? (
                           <>
-                            <Link
-                              href={`/products/${p.id}/edit`}
-                              className={buttonVariants({ variant: 'ghost', size: 'icon' })}
-                              aria-label="Edit product"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Link>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={p.isActive ? 'Deactivate' : 'Activate'}
-                              disabled={busyId === p.id}
-                              onClick={() => toggleActive(p)}
-                              className={p.isActive ? 'text-danger' : 'text-success'}
-                            >
-                              {p.isActive ? (
-                                <Ban className="h-4 w-4" />
-                              ) : (
-                                <RotateCcw className="h-4 w-4" />
-                              )}
-                            </Button>
+                            <Tooltip label="Edit product">
+                              <Link
+                                href={`/products/${p.id}/edit`}
+                                className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+                                aria-label="Edit product"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Link>
+                            </Tooltip>
+                            <Tooltip label={p.isActive ? 'Deactivate product' : 'Reactivate product'}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={p.isActive ? 'Deactivate' : 'Activate'}
+                                disabled={busyId === p.id}
+                                onClick={() => toggleActive(p)}
+                                className={p.isActive ? 'text-danger' : 'text-success'}
+                              >
+                                {p.isActive ? (
+                                  <Ban className="h-4 w-4" />
+                                ) : (
+                                  <RotateCcw className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </Tooltip>
                           </>
                         ) : (
                           <Link

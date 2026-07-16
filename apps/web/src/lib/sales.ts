@@ -1,4 +1,6 @@
-import { api } from './api';
+import type { SaleReturnStatusCode } from '@hardware-pos/shared';
+
+import { api, authorizedFetch } from './api';
 import type { Session } from './auth';
 import type { DiscountType } from './cart';
 
@@ -112,6 +114,8 @@ export interface SaleListItem {
   balanceAmount: number;
   paymentStatus: PaymentStatusCode;
   paymentMethods: PaymentMethodCode[];
+  returnStatus: SaleReturnStatusCode;
+  returnedAmount: number;
   quickbooksDocumentType: string | null;
   syncStatus: SyncStatusCode;
 }
@@ -174,6 +178,8 @@ export interface SaleDetail {
   paidAmount: number;
   balanceAmount: number;
   paymentStatus: PaymentStatusCode;
+  returnStatus: SaleReturnStatusCode;
+  returnedAmount: number;
   quickbooksDocumentType: string | null;
   quickbooksDocumentId: string | null;
   syncStatus: SyncStatusCode;
@@ -200,6 +206,8 @@ interface ApiSaleDetail {
   paidAmount: string | number;
   balanceAmount: string | number;
   paymentStatus: PaymentStatusCode;
+  returnStatus: SaleReturnStatusCode;
+  returnedAmount: string | number;
   quickbooksDocumentType: string | null;
   quickbooksDocumentId: string | null;
   syncStatus: SyncStatusCode;
@@ -243,6 +251,46 @@ export async function fetchSales(session: Session, query: SalesQuery = {}): Prom
   return api.get<SalesPage>(`/sales?${buildQuery(query)}`, auth(session));
 }
 
+export type ReportFormat = 'pdf' | 'xlsx';
+
+/**
+ * Download a sales report (PDF or Excel) covering ALL sales that match the
+ * given filters — not just the currently visible page. Triggers a browser
+ * file download.
+ */
+export async function downloadSalesReport(
+  session: Session,
+  query: Omit<SalesQuery, 'page' | 'pageSize'>,
+  format: ReportFormat,
+): Promise<void> {
+  const params = new URLSearchParams();
+  params.set('format', format);
+  if (query.search) params.set('search', query.search);
+  if (query.paymentStatus) params.set('paymentStatus', query.paymentStatus);
+  if (query.syncStatus) params.set('syncStatus', query.syncStatus);
+  if (query.dateFrom) params.set('dateFrom', query.dateFrom);
+  if (query.dateTo) params.set('dateTo', query.dateTo);
+
+  const res = await authorizedFetch(`/sales/report?${params.toString()}`, session);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
+    const message = body?.message ?? `Export failed (HTTP ${res.status})`;
+    throw new Error(Array.isArray(message) ? message.join(', ') : message);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `sales-report.${format}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** Fetch a single sale with items and payments. */
 export async function fetchSale(session: Session, id: string): Promise<SaleDetail> {
   const s = await api.get<ApiSaleDetail>(`/sales/${id}`, auth(session));
@@ -264,6 +312,8 @@ export async function fetchSale(session: Session, id: string): Promise<SaleDetai
     paidAmount: Number(s.paidAmount),
     balanceAmount: Number(s.balanceAmount),
     paymentStatus: s.paymentStatus,
+    returnStatus: s.returnStatus,
+    returnedAmount: Number(s.returnedAmount),
     quickbooksDocumentType: s.quickbooksDocumentType,
     quickbooksDocumentId: s.quickbooksDocumentId,
     syncStatus: s.syncStatus,
@@ -294,4 +344,12 @@ export async function fetchSale(session: Session, id: string): Promise<SaleDetai
 /** Retry the QuickBooks push for a completed sale. */
 export async function retrySaleSync(session: Session, id: string): Promise<void> {
   await api.post(`/sales/${id}/retry-sync`, undefined, auth(session));
+}
+
+/** Fetch the A4 final-bill / invoice HTML for a completed sale (print or Save-as-PDF). */
+export function fetchSaleBillDocument(
+  session: Session,
+  id: string,
+): Promise<{ html: string; format: string }> {
+  return api.get(`/documents/sales/${id}`, auth(session));
 }

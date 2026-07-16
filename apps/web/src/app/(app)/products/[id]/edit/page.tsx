@@ -5,12 +5,11 @@ import { useParams } from 'next/navigation';
 import * as React from 'react';
 import { ArrowLeft } from 'lucide-react';
 
-import { PageHeader } from '@/components/page-header';
 import { ProductForm } from '@/components/products/product-form';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
 import { Permission } from '@/lib/permissions';
-import { fetchCategories, fetchProduct, type Category, type ManagedProduct } from '@/lib/products-api';
+import { fetchCategoryTree, fetchProduct, type CategoryNode, type ManagedProduct } from '@/lib/products-api';
 
 export default function EditProductPage() {
   const { session, hasPermission } = useAuth();
@@ -18,7 +17,7 @@ export default function EditProductPage() {
   const { id } = useParams<{ id: string }>();
 
   const [product, setProduct] = React.useState<ManagedProduct | null>(null);
-  const [categories, setCategories] = React.useState<Category[]>([]);
+  const [categories, setCategories] = React.useState<CategoryNode[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -26,7 +25,7 @@ export default function EditProductPage() {
     if (!session || !id) return;
     let cancelled = false;
     setLoading(true);
-    Promise.all([fetchProduct(session, id), fetchCategories(session).catch(() => [])])
+    Promise.all([fetchProduct(session, id), fetchCategoryTree(session).catch(() => [])])
       .then(([p, cats]) => {
         if (cancelled) return;
         setProduct(p);
@@ -43,15 +42,12 @@ export default function EditProductPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <Link
-          href={`/products/${id}`}
-          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to product
-        </Link>
-        <PageHeader title="Edit product" description={product?.name} />
-      </div>
+      <Link
+        href={`/products/${id}`}
+        className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+      >
+        <ArrowLeft className="h-4 w-4" /> Back to product
+      </Link>
 
       {loading ? (
         <p className="py-16 text-center text-sm text-muted-foreground">Loading…</p>

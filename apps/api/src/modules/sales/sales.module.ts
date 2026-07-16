@@ -4,13 +4,14 @@ import { DiscountsModule } from '../discounts/discounts.module';
 import { SettingsModule } from '../settings/settings.module';
 import { SyncModule } from '../sync/sync.module';
 import { SalesController } from './sales.controller';
+import { SalesReportService } from './sales-report.service';
 import { SalesRepository } from './sales.repository';
 import { SalesService } from './sales.service';
 
 @Module({
   imports: [SettingsModule, DiscountsModule, SyncModule],
   controllers: [SalesController],
-  providers: [SalesService, SalesRepository],
+  providers: [SalesService, SalesRepository, SalesReportService],
   exports: [SalesService],
 })
 export class SalesModule {}

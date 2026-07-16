@@ -3,14 +3,17 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import * as React from 'react';
-import { ArrowLeft, Printer, RefreshCw } from 'lucide-react';
+import { ArrowLeft, FileDown, Printer, RefreshCw, Undo2 } from 'lucide-react';
 
 import { SyncBadge } from '@/components/quickbooks/sync-badge';
+import { SaleReturnStatusBadge } from '@/components/returns/status-badges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
+import { Permission } from '@/lib/permissions';
 import { reprintCustomerReceipt } from '@/lib/receipt-print';
+import { fetchSaleReturns, type ReturnDetail } from '@/lib/returns';
 import { fetchSale, retrySaleSync, type PaymentStatusCode, type SaleDetail } from '@/lib/sales';
 import { formatMoney } from '@/lib/utils';
 
@@ -45,11 +48,12 @@ function formatDateTime(iso: string): string {
 }
 
 export default function SaleDetailPage() {
-  const { session } = useAuth();
+  const { session, hasPermission } = useAuth();
   const params = useParams<{ id: string }>();
   const id = params.id;
 
   const [sale, setSale] = React.useState<SaleDetail | null>(null);
+  const [returns, setReturns] = React.useState<ReturnDetail[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -66,6 +70,10 @@ export default function SaleDetailPage() {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load sale');
       })
       .finally(() => !cancelled && setLoading(false));
+    // Prior returns for the "Returns" section (best-effort; may be empty).
+    fetchSaleReturns(session, id)
+      .then((r) => !cancelled && setReturns(r))
+      .catch(() => !cancelled && setReturns([]));
     return () => {
       cancelled = true;
     };
@@ -94,6 +102,12 @@ export default function SaleDetailPage() {
     }
   };
 
+  // A4 is the default bill: open the native, print-ready A4 preview route.
+  const handleA4Bill = () => {
+    if (!sale) return;
+    window.open(`/print/sales/${sale.id}`, '_blank', 'noopener');
+  };
+
   if (loading) {
     return <p className="py-16 text-center text-sm text-muted-foreground">Loading sale…</p>;
   }
@@ -115,6 +129,10 @@ export default function SaleDetailPage() {
 
   const pay = PAYMENT_STATUS[sale.paymentStatus];
   const canRetry = sale.syncStatus === 'FAILED' || sale.syncStatus === 'PENDING';
+  const canReturn =
+    sale.status === 'COMPLETED' &&
+    sale.returnStatus !== 'FULLY_RETURNED' &&
+    hasPermission(Permission.RETURN_CREATE);
 
   return (
     <div className="space-y-6">
@@ -133,9 +151,19 @@ export default function SaleDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleReprint} disabled={busy}>
-            <Printer className="h-4 w-4" />
-            Print receipt
+          {canReturn ? (
+            <Link href={`/returns/new?saleId=${sale.id}`}>
+              <Button>
+                <Undo2 className="h-4 w-4" />
+                Return Products
+              </Button>
+            </Link>
+          ) : null}
+          <Button variant="outline" onClick={handleA4Bill} disabled={busy} leftIcon={<FileDown className="h-4 w-4" />}>
+            Print A4 bill
+          </Button>
+          <Button variant="ghost" onClick={handleReprint} disabled={busy} leftIcon={<Printer className="h-4 w-4" />}>
+            Thermal receipt
           </Button>
           {canRetry ? (
             <Button variant="outline" onClick={handleRetry} disabled={busy}>
@@ -148,6 +176,7 @@ export default function SaleDetailPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={pay.variant}>{pay.label}</Badge>
+        <SaleReturnStatusBadge status={sale.returnStatus} />
         <SyncBadge status={sale.syncStatus} />
         {sale.quickbooksDocumentType ? (
           <Badge variant="primary">
@@ -272,6 +301,61 @@ export default function SaleDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Returns against this sale */}
+      {returns.length > 0 ? (
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle>Returns</CardTitle>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
+                  <th className="px-4 py-3 font-medium">Return</th>
+                  <th className="px-4 py-3 font-medium">Date</th>
+                  <th className="px-4 py-3 text-right font-medium">Items</th>
+                  <th className="px-4 py-3 text-right font-medium">Refund</th>
+                  <th className="px-4 py-3 font-medium">Method</th>
+                  <th className="px-4 py-3 font-medium">Created by</th>
+                  <th className="px-4 py-3 font-medium">Approved by</th>
+                  <th className="px-4 py-3 font-medium">Sync</th>
+                  <th className="px-4 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {returns.map((r) => (
+                  <tr key={r.id} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3">
+                      <Link href={`/returns/${r.id}`} className="font-medium text-primary hover:underline">
+                        {r.returnNumber}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {formatDateTime(r.completedAt ?? r.createdAt)}
+                    </td>
+                    <td className="px-4 py-3 text-right">{r.items.length}</td>
+                    <td className="px-4 py-3 text-right font-medium">{formatMoney(r.refundTotal)}</td>
+                    <td className="px-4 py-3">{r.refundMethod ? METHOD_LABEL[r.refundMethod] ?? r.refundMethod : '—'}</td>
+                    <td className="px-4 py-3">{r.createdBy?.name ?? '—'}</td>
+                    <td className="px-4 py-3">{r.approvedBy?.name ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <SyncBadge status={r.syncStatus} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link href={`/returns/${r.id}`}>
+                        <Button variant="ghost" size="sm">
+                          View
+                        </Button>
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }

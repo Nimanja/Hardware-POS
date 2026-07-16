@@ -4,21 +4,20 @@ import Link from 'next/link';
 import * as React from 'react';
 import { ArrowLeft } from 'lucide-react';
 
-import { PageHeader } from '@/components/page-header';
 import { ProductForm } from '@/components/products/product-form';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
 import { Permission } from '@/lib/permissions';
-import { fetchCategories, type Category } from '@/lib/products-api';
+import { fetchCategoryTree, type CategoryNode } from '@/lib/products-api';
 
 export default function NewProductPage() {
   const { session, hasPermission } = useAuth();
   const canManage = hasPermission(Permission.PRODUCT_MANAGE);
-  const [categories, setCategories] = React.useState<Category[]>([]);
+  const [categories, setCategories] = React.useState<CategoryNode[]>([]);
 
   React.useEffect(() => {
     if (session) {
-      fetchCategories(session).then(setCategories).catch(() => setCategories([]));
+      fetchCategoryTree(session).then(setCategories).catch(() => setCategories([]));
     }
   }, [session]);
 
@@ -26,12 +25,9 @@ export default function NewProductPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <Link href="/products" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
-          <ArrowLeft className="h-4 w-4" /> Back to products
-        </Link>
-        <PageHeader title="Add product" description="Create a locally-managed product." />
-      </div>
+      <Link href="/products" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+        <ArrowLeft className="h-4 w-4" /> Back to products
+      </Link>
 
       {!canManage ? (
         <Card>

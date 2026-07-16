@@ -17,13 +17,17 @@ import { ProductsModule } from './modules/products/products.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { SalesModule } from './modules/sales/sales.module';
+import { ReturnsModule } from './modules/returns/returns.module';
+import { QuotationsModule } from './modules/quotations/quotations.module';
 import { DiscountsModule } from './modules/discounts/discounts.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReceiptsModule } from './modules/receipts/receipts.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 import { QuickBooksModule } from './modules/quickbooks/quickbooks.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -37,13 +41,17 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
     CategoriesModule,
     CustomersModule,
     SalesModule,
+    ReturnsModule,
+    QuotationsModule,
     DiscountsModule,
     PaymentsModule,
     ReceiptsModule,
+    DocumentsModule,
     QuickBooksModule,
     SyncModule,
     SettingsModule,
     AuditLogModule,
+    DashboardModule,
   ],
   providers: [
     // Order matters: authenticate first (populates request.user), then authorize.

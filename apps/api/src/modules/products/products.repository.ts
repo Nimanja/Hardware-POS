@@ -14,12 +14,14 @@ export interface ProductSearchFilters {
   sku?: string;
   barcode?: string;
   categoryId?: string;
+  subcategoryId?: string;
   isActive?: boolean;
 }
 
 export interface ProductListFilters {
   search?: string;
   categoryId?: string;
+  subcategoryId?: string;
   isActive?: boolean;
   syncStatus?: Prisma.ProductWhereInput['syncStatus'];
   stockStatus?: 'IN' | 'OUT';
@@ -75,6 +77,7 @@ export class ProductsRepository {
       ...(filters.sku ? { sku: { contains: filters.sku, mode: 'insensitive' } } : {}),
       ...(filters.barcode ? { barcode: { contains: filters.barcode, mode: 'insensitive' } } : {}),
       ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
+      ...(filters.subcategoryId ? { subcategoryId: filters.subcategoryId } : {}),
       ...(filters.isActive !== undefined ? { isActive: filters.isActive } : {}),
     };
 
@@ -82,6 +85,17 @@ export class ProductsRepository {
       this.prisma.product.findMany({ where, orderBy: { name: 'asc' }, skip, take }),
       this.prisma.product.count({ where }),
     ]);
+  }
+
+  /** Look up a subcategory (id + parent) to validate product ↔ category alignment. */
+  findSubcategory(
+    tenantId: string,
+    id: string,
+  ): Promise<{ id: string; categoryId: string } | null> {
+    return this.prisma.productSubcategory.findFirst({
+      where: { id, tenantId },
+      select: { id: true, categoryId: true },
+    });
   }
 
   findByIdForTenant(tenantId: string, id: string): Promise<Product | null> {
@@ -111,6 +125,7 @@ export class ProductsRepository {
           }
         : {}),
       ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
+      ...(filters.subcategoryId ? { subcategoryId: filters.subcategoryId } : {}),
       ...(filters.isActive !== undefined ? { isActive: filters.isActive } : {}),
       ...(filters.syncStatus ? { syncStatus: filters.syncStatus } : {}),
       ...(filters.stockStatus === 'OUT'
